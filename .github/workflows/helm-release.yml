@@ -1,0 +1,53 @@
+name: Release Helm Chart
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and Release Helm Chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dakera-helm
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Lint chart
+        run: |
+          helm lint charts/dakera/ \
+            --set dakera.rootApiKey=ci-lint \
+            --set minio.rootPassword=ci-lint
+
+      - name: Run chart-releaser
+        # Publishes chart packages as GitHub Releases in dakera-ai/dakera-deploy
+        # and updates the index.yaml on the gh-pages branch there.
+        # CR_TOKEN must have write access to dakera-ai/dakera-deploy.
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: charts
+          config: cr.yaml
+        env:
+          CR_TOKEN: ${{ secrets.GH_PAT_PACKAGES }}
