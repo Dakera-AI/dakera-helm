@@ -1,0 +1,34 @@
+name: Publish Helm Chart OCI
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'charts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Push chart to GHCR OCI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package + push chart
+        run: |
+          helm package charts/dakera
+          helm push dakera-*.tgz oci://ghcr.io/dakera-ai/charts
