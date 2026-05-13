@@ -31,4 +31,4 @@ jobs:
       - name: Package + push chart
         run: |
           helm package charts/dakera
-          helm push dakera-*.tgz oci://ghcr.io/dakera-ai/charts
+          helm push dakera-*.tgz oci://ghcr.io/dakera-ai
