@@ -42,12 +42,9 @@ jobs:
             --set minio.rootPassword=ci-lint
 
       - name: Run chart-releaser
-        # Publishes chart packages as GitHub Releases in dakera-ai/dakera-deploy
-        # and updates the index.yaml on the gh-pages branch there.
-        # CR_TOKEN must have write access to dakera-ai/dakera-deploy.
         uses: helm/chart-releaser-action@v1.6.0
         with:
           charts_dir: charts
           config: cr.yaml
         env:
-          CR_TOKEN: ${{ secrets.GH_PAT_PACKAGES }}
+          CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
