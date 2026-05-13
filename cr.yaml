@@ -1,5 +1,5 @@
 owner: dakera-ai
-git-repo: dakera-deploy
+git-repo: dakera-helm
 git-base-url: https://api.github.com/
 pages-branch: gh-pages
 package-path: .cr-release-packages
