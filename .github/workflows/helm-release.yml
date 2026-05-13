@@ -48,3 +48,16 @@ jobs:
           config: cr.yaml
         env:
           CR_TOKEN: ${{ secrets.GH_PAT_PACKAGES }}
+
+      - name: Preserve artifacthub-repo.yml on gh-pages
+        run: |
+          git fetch origin gh-pages
+          git checkout gh-pages
+          if [ ! -f artifacthub-repo.yml ]; then
+            git checkout origin/main -- charts/dakera/artifacthub-repo.yml
+            cp charts/dakera/artifacthub-repo.yml ./artifacthub-repo.yml
+            git rm --cached charts/dakera/artifacthub-repo.yml 2>/dev/null || true
+            git add artifacthub-repo.yml
+            git commit -m "preserve artifacthub-repo.yml"
+            git push origin gh-pages
+          fi
