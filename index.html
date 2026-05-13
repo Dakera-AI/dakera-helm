@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dakera Helm Chart</title>
+  <meta name="description" content="Helm chart for Dakera — the AI agent memory platform. Deploy in seconds with Helm or Docker." />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 24px 64px;
+    }
+    .logo { width: 64px; height: 64px; margin-bottom: 24px; }
+    h1 { font-size: 2rem; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+    .tagline { color: #8b949e; font-size: 1.05rem; margin-bottom: 32px; text-align: center; }
+    .badges { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 40px; }
+    .badges a { display: inline-block; }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 28px 32px;
+      width: 100%;
+      max-width: 720px;
+      margin-bottom: 20px;
+    }
+    .card h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #f0a30a;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 16px;
+    }
+    pre {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      line-height: 1.6;
+      color: #e6edf3;
+      position: relative;
+    }
+    code { font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace; }
+    .comment { color: #8b949e; }
+    .method-label {
+      display: inline-block;
+      background: #1f6feb20;
+      color: #58a6ff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .method-label.recommended { background: #1a7f37; color: #3fb950; }
+    p { color: #8b949e; font-size: 0.92rem; line-height: 1.6; margin-bottom: 14px; }
+    a { color: #58a6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .footer { margin-top: 48px; color: #484f58; font-size: 0.85rem; text-align: center; }
+    .footer a { color: #484f58; }
+    .footer a:hover { color: #8b949e; }
+    .divider { border: none; border-top: 1px solid #21262d; margin: 6px 0 18px; }
+    .values-note { font-size: 0.82rem; color: #8b949e; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <img class="logo" src="https://raw.githubusercontent.com/Dakera-AI/.github/main/assets/logo.png" alt="Dakera AI" />
+  <h1>Dakera Helm Chart</h1>
+  <p class="tagline">The AI agent memory platform — deployed in seconds</p>
+
+  <div class="badges">
+    <a href="https://artifacthub.io/packages/helm/dakera/dakera">
+      <img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/dakera" alt="ArtifactHub" />
+    </a>
+    <a href="https://github.com/dakera-ai/dakera-helm/releases">
+      <img src="https://img.shields.io/github/v/release/dakera-ai/dakera-helm?label=chart&color=blue&style=flat-square" alt="Chart Version" />
+    </a>
+    <a href="https://dakera.ai">
+      <img src="https://img.shields.io/badge/dakera.ai-visit-gold?style=flat-square" alt="dakera.ai" />
+    </a>
+    <a href="https://github.com/dakera-ai/dakera-helm/blob/main/LICENSE">
+      <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT" />
+    </a>
+  </div>
+
+  <!-- OCI Install -->
+  <div class="card">
+    <h2>Install via OCI</h2>
+    <span class="method-label recommended">Recommended — no repo add needed</span>
+    <pre><code><span class="comment"># Latest</span>
+helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera \
+  --namespace dakera --create-namespace \
+  --set dakera.rootApiKey=&lt;your-key&gt; \
+  --set minio.rootPassword=&lt;your-password&gt;
+
+<span class="comment"># Pin a version</span>
+helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera \
+  --version 0.11.55 \
+  --namespace dakera --create-namespace \
+  --set dakera.rootApiKey=&lt;your-key&gt; \
+  --set minio.rootPassword=&lt;your-password&gt;</code></pre>
+  </div>
+
+  <!-- Helm Repo Install -->
+  <div class="card">
+    <h2>Install via Helm Repository</h2>
+    <span class="method-label">ArtifactHub / GitHub Pages</span>
+    <pre><code>helm repo add dakera https://dakera-ai.github.io/dakera-helm
+helm repo update
+helm install dakera dakera/dakera \
+  --namespace dakera --create-namespace \
+  --set dakera.rootApiKey=&lt;your-key&gt; \
+  --set minio.rootPassword=&lt;your-password&gt;</code></pre>
+  </div>
+
+  <!-- Upgrade -->
+  <div class="card">
+    <h2>Upgrade</h2>
+    <pre><code>helm repo update
+helm upgrade dakera dakera/dakera --namespace dakera \
+  --set dakera.rootApiKey=&lt;your-key&gt; \
+  --set minio.rootPassword=&lt;your-password&gt;</code></pre>
+  </div>
+
+  <!-- Key Values -->
+  <div class="card">
+    <h2>Key Configuration</h2>
+    <p>Pass values with <code>--set</code> or a <code>values.yaml</code> file (<code>-f values.yaml</code>).</p>
+    <pre><code><span class="comment"># Minimum required</span>
+dakera.rootApiKey: &lt;your-api-key&gt;
+minio.rootPassword: &lt;your-minio-password&gt;
+
+<span class="comment"># Optional — expose externally</span>
+service.type: LoadBalancer
+ingress.enabled: true
+ingress.host: dakera.example.com</code></pre>
+    <p class="values-note">
+      Full values reference: <a href="https://github.com/dakera-ai/dakera-helm/blob/main/charts/dakera/values.yaml">charts/dakera/values.yaml</a>
+    </p>
+  </div>
+
+  <!-- Links -->
+  <div class="card">
+    <h2>Resources</h2>
+    <p>
+      <a href="https://dakera.ai/docs">Documentation</a> &nbsp;·&nbsp;
+      <a href="https://github.com/dakera-ai/dakera-helm">GitHub Repository</a> &nbsp;·&nbsp;
+      <a href="https://artifacthub.io/packages/helm/dakera/dakera">ArtifactHub</a> &nbsp;·&nbsp;
+      <a href="https://github.com/dakera-ai/dakera-helm/releases">Releases</a>
+    </p>
+    <hr class="divider" />
+    <p>
+      Dakera is the AI agent memory platform — persistent, searchable, decay-weighted memory in a single self-hosted Rust binary.
+      No embedding APIs. No sidecars. No message queues.
+    </p>
+    <p>
+      <a href="https://dakera.ai">dakera.ai</a> &nbsp;·&nbsp;
+      <a href="https://dakera.ai#cta">Request Early Access →</a>
+    </p>
+  </div>
+
+  <div class="footer">
+    <p>
+      <a href="https://dakera.ai">dakera.ai</a> &nbsp;·&nbsp;
+      <a href="https://github.com/dakera-ai">GitHub</a> &nbsp;·&nbsp;
+      MIT License
+    </p>
+    <p style="margin-top:8px">ذاكرة — Dhākira — Arabic for memory</p>
+  </div>
+</body>
+</html>
