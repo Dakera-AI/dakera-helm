@@ -7,6 +7,32 @@ entries:
           image: ghcr.io/dakera-ai/dakera:latest
     apiVersion: v2
     appVersion: 0.11.55
+    created: "2026-05-14T06:30:32.402175665Z"
+    description: Dakera — AI agent memory platform
+    digest: 3fb962280bd26b87b749b336de39c47bb4b509dd1d5c6e21847a488fea83e87b
+    home: https://github.com/dakera-ai/dakera-deploy
+    keywords:
+    - agent-memory
+    - ai-memory
+    - ai
+    - memory
+    - mcp
+    maintainers:
+    - name: Dakera AI
+      url: https://github.com/dakera-ai
+    name: dakera
+    sources:
+    - https://github.com/dakera-ai/dakera
+    type: application
+    urls:
+    - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.58/dakera-0.11.58.tgz
+    version: 0.11.58
+  - annotations:
+      artifacthub.io/images: |
+        - name: dakera
+          image: ghcr.io/dakera-ai/dakera:latest
+    apiVersion: v2
+    appVersion: 0.11.55
     created: "2026-05-14T06:29:04.273404009Z"
     description: Dakera — AI agent memory platform
     digest: 1359bf7cf35fb1f78860ebf9e203ae4d64f1c8dd2ad203bb95bf1df1bea4b266
@@ -71,4 +97,4 @@ entries:
     urls:
     - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.55/dakera-0.11.55.tgz
     version: 0.11.55
-generated: "2026-05-14T06:29:04.273415697Z"
+generated: "2026-05-14T06:30:32.402203456Z"
