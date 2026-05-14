@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write  # required for Cosign keyless signing via GitHub OIDC
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -48,6 +49,25 @@ jobs:
           config: cr.yaml
         env:
           CR_TOKEN: ${{ secrets.GH_PAT_PACKAGES }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign chart package with Cosign (keyless via GitHub OIDC)
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          CHART_VERSION=$(grep '^version:' charts/dakera/Chart.yaml | awk '{print $2}')
+          CHART_PKG=".cr-release-packages/dakera-${CHART_VERSION}.tgz"
+          if [ -f "${CHART_PKG}" ]; then
+            cosign sign-blob \
+              --yes \
+              --output-signature "${CHART_PKG}.sig" \
+              "${CHART_PKG}"
+            echo "Chart signed: ${CHART_PKG}.sig"
+          else
+            echo "Chart package not found at ${CHART_PKG} — skipping signing"
+          fi
 
       - name: Preserve artifacthub-repo.yml on gh-pages
         run: |
