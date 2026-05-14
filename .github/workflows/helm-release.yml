@@ -61,3 +61,53 @@ jobs:
             git commit -m "preserve artifacthub-repo.yml"
             git push origin gh-pages
           fi
+
+      - name: Upload Dakera logo to ArtifactHub and set logoImageID
+        if: ${{ secrets.ARTIFACTHUB_API_KEY_ID != '' && secrets.ARTIFACTHUB_API_KEY_SECRET != '' }}
+        env:
+          ARTIFACTHUB_API_KEY_ID: ${{ secrets.ARTIFACTHUB_API_KEY_ID }}
+          ARTIFACTHUB_API_KEY_SECRET: ${{ secrets.ARTIFACTHUB_API_KEY_SECRET }}
+        run: |
+          set -e
+          git fetch origin gh-pages
+          git checkout gh-pages
+
+          # Skip if logoImageID already set
+          if grep -q '^logoImageID:' artifacthub-repo.yml; then
+            echo "logoImageID already set — skipping upload"
+            exit 0
+          fi
+
+          # Download the Dakera logo
+          curl -fsSL -o /tmp/dakera-logo.png https://dakera.ai/logo.png
+          echo "Logo downloaded: $(wc -c < /tmp/dakera-logo.png) bytes"
+
+          # Upload to ArtifactHub image API
+          RESPONSE=$(curl -s -X POST https://artifacthub.io/api/v1/images \
+            -H "X-API-KEY-ID: ${ARTIFACTHUB_API_KEY_ID}" \
+            -H "X-API-KEY-SECRET: ${ARTIFACTHUB_API_KEY_SECRET}" \
+            -F "image=@/tmp/dakera-logo.png")
+
+          IMAGE_ID=$(echo "$RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['imageID'])" 2>/dev/null || true)
+
+          if [ -z "$IMAGE_ID" ]; then
+            echo "ERROR: Failed to get imageID from ArtifactHub. Response: $RESPONSE"
+            exit 1
+          fi
+
+          echo "ArtifactHub imageID: $IMAGE_ID"
+
+          # Patch artifacthub-repo.yml — add logoImageID after repositoryID line
+          sed -i "s|^logoURL:.*|logoImageID: ${IMAGE_ID}|" artifacthub-repo.yml
+
+          # If logoURL line wasn't replaced (wasn't present), append logoImageID
+          if ! grep -q '^logoImageID:' artifacthub-repo.yml; then
+            echo "logoImageID: ${IMAGE_ID}" >> artifacthub-repo.yml
+          fi
+
+          git add artifacthub-repo.yml
+          git diff --cached --quiet && echo "No changes" && exit 0
+
+          git commit -m "ci: set ArtifactHub logoImageID ${IMAGE_ID}"
+          git push origin gh-pages
+          echo "artifacthub-repo.yml updated with logoImageID: ${IMAGE_ID}"
