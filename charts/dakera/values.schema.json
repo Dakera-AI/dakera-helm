@@ -1,0 +1,287 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Dakera Helm Chart Values",
+  "description": "Configuration values for the Dakera AI agent memory platform Helm chart",
+  "type": "object",
+  "properties": {
+    "dakera": {
+      "type": "object",
+      "description": "Dakera server configuration",
+      "properties": {
+        "image": {
+          "type": "object",
+          "description": "Container image settings",
+          "properties": {
+            "repository": {"type": "string", "description": "Image repository"},
+            "tag": {"type": "string", "description": "Image tag"},
+            "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"], "description": "Image pull policy"}
+          }
+        },
+        "replicaCount": {"type": "integer", "minimum": 1, "description": "Number of Dakera server replicas"},
+        "rootApiKey": {"type": "string", "description": "Root API key — REQUIRED. Set via --set or external secret."},
+        "config": {
+          "type": "object",
+          "description": "Dakera server runtime configuration",
+          "properties": {
+            "host": {"type": "string", "description": "Bind address"},
+            "port": {"type": "integer", "description": "HTTP port"},
+            "grpcPort": {"type": "integer", "description": "gRPC port"},
+            "storage": {"type": "string", "enum": ["s3", "local"], "description": "Storage backend"},
+            "s3Bucket": {"type": "string", "description": "S3 bucket name"},
+            "s3Region": {"type": "string", "description": "S3 region"},
+            "s3Endpoint": {"type": "string", "description": "Custom S3 endpoint (for MinIO or external providers)"},
+            "l1CacheSize": {"type": "string", "description": "L1 in-memory cache size in bytes"},
+            "l2CachePath": {"type": "string", "description": "L2 RocksDB cache path"},
+            "tieredStorage": {"type": "boolean", "description": "Enable tiered storage (hot/warm/cold)"},
+            "hotToWarmSecs": {"type": "integer", "description": "Seconds before hot memory moves to warm tier"},
+            "warmToColdSecs": {"type": "integer", "description": "Seconds before warm memory moves to cold tier"},
+            "autoTier": {"type": "boolean", "description": "Enable automatic tiering"},
+            "tierCheckIntervalSecs": {"type": "integer", "description": "Tier check interval in seconds"},
+            "maxBodySize": {"type": "string", "description": "Maximum HTTP body size in bytes"},
+            "authEnabled": {"type": "boolean", "description": "Enable API key authentication"},
+            "rustLog": {"type": "string", "description": "Rust log level (e.g. info, debug, warn)"}
+          }
+        },
+        "persistence": {
+          "type": "object",
+          "description": "Persistent storage for RocksDB L2 cache",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "size": {"type": "string", "description": "PVC size (e.g. 20Gi)"},
+            "storageClass": {"type": "string", "description": "StorageClass name — empty uses cluster default"}
+          }
+        },
+        "resources": {
+          "type": "object",
+          "description": "CPU and memory resource requests/limits",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpu": {"type": "string"},
+                "memory": {"type": "string"}
+              }
+            },
+            "limits": {
+              "type": "object",
+              "properties": {
+                "cpu": {"type": "string"},
+                "memory": {"type": "string"}
+              }
+            }
+          }
+        },
+        "autoscaling": {
+          "type": "object",
+          "description": "Horizontal Pod Autoscaler configuration",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "minReplicas": {"type": "integer", "minimum": 1},
+            "maxReplicas": {"type": "integer", "minimum": 1},
+            "targetCPUUtilizationPercentage": {"type": "integer", "minimum": 1, "maximum": 100},
+            "targetMemoryUtilizationPercentage": {"type": "integer", "minimum": 1, "maximum": 100}
+          }
+        },
+        "service": {
+          "type": "object",
+          "description": "Kubernetes Service configuration",
+          "properties": {
+            "type": {"type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+            "httpPort": {"type": "integer"},
+            "grpcPort": {"type": "integer"}
+          }
+        }
+      },
+      "required": []
+    },
+    "dashboard": {
+      "type": "object",
+      "description": "Dakera Dashboard UI configuration",
+      "properties": {
+        "enabled": {"type": "boolean", "description": "Enable the dashboard component"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"},
+            "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
+          }
+        },
+        "replicaCount": {"type": "integer", "minimum": 1},
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {"type": "object", "properties": {"cpu": {"type": "string"}, "memory": {"type": "string"}}},
+            "limits": {"type": "object", "properties": {"cpu": {"type": "string"}, "memory": {"type": "string"}}}
+          }
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {"type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+            "port": {"type": "integer"}
+          }
+        }
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "description": "Dakera MCP (Model Context Protocol) server configuration",
+      "properties": {
+        "enabled": {"type": "boolean", "description": "Enable the MCP server component"},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"},
+            "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
+          }
+        },
+        "replicaCount": {"type": "integer", "minimum": 1},
+        "config": {
+          "type": "object",
+          "properties": {
+            "port": {"type": "integer", "description": "MCP server port"}
+          }
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {"type": "object", "properties": {"cpu": {"type": "string"}, "memory": {"type": "string"}}},
+            "limits": {"type": "object", "properties": {"cpu": {"type": "string"}, "memory": {"type": "string"}}}
+          }
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {"type": "string", "enum": ["ClusterIP", "NodePort", "LoadBalancer"]},
+            "port": {"type": "integer"}
+          }
+        }
+      }
+    },
+    "minio": {
+      "type": "object",
+      "description": "Built-in MinIO S3-compatible storage. Set enabled: false to use external S3.",
+      "properties": {
+        "enabled": {"type": "boolean", "description": "Enable built-in MinIO. Disable to use external S3."},
+        "image": {
+          "type": "object",
+          "properties": {
+            "repository": {"type": "string"},
+            "tag": {"type": "string"},
+            "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
+          }
+        },
+        "rootUser": {"type": "string", "description": "MinIO root username"},
+        "rootPassword": {"type": "string", "description": "MinIO root password — REQUIRED when minio.enabled is true"},
+        "persistence": {
+          "type": "object",
+          "properties": {
+            "size": {"type": "string", "description": "PVC size (e.g. 50Gi)"},
+            "storageClass": {"type": "string"}
+          }
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {"type": "object", "properties": {"cpu": {"type": "string"}, "memory": {"type": "string"}}},
+            "limits": {"type": "object", "properties": {"cpu": {"type": "string"}, "memory": {"type": "string"}}}
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "description": "Kubernetes Ingress configuration for external access",
+      "properties": {
+        "enabled": {"type": "boolean", "description": "Enable Ingress resources"},
+        "className": {"type": "string", "description": "Ingress class name (e.g. nginx, traefik)"},
+        "apiHost": {"type": "string", "description": "Hostname for the Dakera API (e.g. api.dakera.yourdomain.com)"},
+        "dashboardHost": {"type": "string", "description": "Hostname for the dashboard"},
+        "mcpHost": {"type": "string", "description": "Hostname for the MCP server"},
+        "annotations": {
+          "type": "object",
+          "description": "Ingress annotations (e.g. cert-manager.io/cluster-issuer)",
+          "additionalProperties": {"type": "string"}
+        },
+        "tls": {
+          "type": "array",
+          "description": "TLS configuration blocks",
+          "items": {
+            "type": "object",
+            "properties": {
+              "secretName": {"type": "string"},
+              "hosts": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    },
+    "monitoring": {
+      "type": "object",
+      "description": "Prometheus + Grafana monitoring stack",
+      "properties": {
+        "enabled": {"type": "boolean", "description": "Enable monitoring components"},
+        "prometheus": {
+          "type": "object",
+          "properties": {
+            "image": {
+              "type": "object",
+              "properties": {
+                "repository": {"type": "string"},
+                "tag": {"type": "string"}
+              }
+            },
+            "retention": {"type": "string", "description": "Data retention period (e.g. 15d)"},
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "size": {"type": "string"},
+                "storageClass": {"type": "string"}
+              }
+            }
+          }
+        },
+        "grafana": {
+          "type": "object",
+          "properties": {
+            "image": {
+              "type": "object",
+              "properties": {
+                "repository": {"type": "string"},
+                "tag": {"type": "string"}
+              }
+            },
+            "adminUser": {"type": "string", "description": "Grafana admin username"},
+            "adminPassword": {"type": "string", "description": "Grafana admin password — auto-generated if empty"},
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "size": {"type": "string"},
+                "storageClass": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "global": {
+      "type": "object",
+      "description": "Global settings applied across all components",
+      "properties": {
+        "namespace": {"type": "string", "description": "Kubernetes namespace to deploy into"},
+        "imagePullSecrets": {
+          "type": "array",
+          "description": "List of image pull secrets for private registries",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}
