@@ -2,7 +2,6 @@
 
 Helm chart source repository for [Dakera](https://dakera.ai) — AI agent memory platform.
 
-[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/dakera)](https://artifacthub.io/packages/helm/dakera/dakera)
 [![Chart Version](https://img.shields.io/github/v/release/dakera-ai/dakera-helm?label=chart&style=flat-square&color=blue)](https://github.com/dakera-ai/dakera-helm/releases)
 [![OCI](https://img.shields.io/badge/OCI-ghcr.io-purple?style=flat-square)](https://github.com/dakera-ai/dakera-helm/pkgs/container/dakera-helm%2Fdakera)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
