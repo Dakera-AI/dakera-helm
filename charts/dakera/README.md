@@ -1,5 +1,6 @@
 # Dakera
 
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/dakera-helm)](https://artifacthub.io/packages/helm/dakera-helm/dakera)
 [![Chart Version](https://img.shields.io/github/v/release/dakera-ai/dakera-helm?label=chart&style=flat-square&color=blue)](https://github.com/dakera-ai/dakera-helm/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square)](https://github.com/dakera-ai/dakera-helm/blob/main/LICENSE)
 
