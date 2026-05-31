@@ -20,6 +20,8 @@ data:
   DAKERA_WARM_TO_COLD_SECS: {{ .Values.dakera.config.warmToColdSecs | quote }}
   DAKERA_AUTO_TIER: {{ .Values.dakera.config.autoTier | quote }}
   DAKERA_TIER_CHECK_INTERVAL_SECS: {{ .Values.dakera.config.tierCheckIntervalSecs | quote }}
+  DAKERA_TIERED: {{ .Values.dakera.config.tiered | quote }}
+  DAKERA_SEARCH_MODE: {{ .Values.dakera.config.searchMode | quote }}
   DAKERA_MAX_BODY_SIZE: {{ .Values.dakera.config.maxBodySize | quote }}
   DAKERA_AUTH_ENABLED: {{ .Values.dakera.config.authEnabled | quote }}
   RUST_LOG: {{ .Values.dakera.config.rustLog | quote }}
