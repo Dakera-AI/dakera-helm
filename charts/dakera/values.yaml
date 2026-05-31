@@ -28,6 +28,8 @@ dakera:
     warmToColdSecs: 86400
     autoTier: true
     tierCheckIntervalSecs: 300
+    tiered: "1"
+    searchMode: hybrid
     maxBodySize: "524288000"  # 500 MB
     authEnabled: true
     rustLog: info
