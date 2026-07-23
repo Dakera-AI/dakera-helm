@@ -9,7 +9,7 @@
 dakera:
   image:
     repository: ghcr.io/dakera-ai/dakera
-    tag: "0.11.38"
+    tag: "0.11.101"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -67,7 +67,7 @@ dashboard:
   enabled: true
   image:
     repository: ghcr.io/dakera-ai/dakera-dashboard
-    tag: "0.3.28"
+    tag: "0.3.29"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -89,7 +89,7 @@ mcp:
   enabled: true
   image:
     repository: ghcr.io/dakera-ai/dakera-mcp
-    tag: "0.9.2"
+    tag: "0.10.11"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
