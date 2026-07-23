@@ -2,15 +2,15 @@ apiVersion: v2
 name: dakera
 description: Dakera — AI agent memory platform
 type: application
-version: 0.11.59
-appVersion: "0.11.55"
+version: 0.11.101
+appVersion: "0.11.101"
 keywords:
   - agent-memory
   - ai-memory
   - ai
   - memory
   - mcp
-home: https://github.com/dakera-ai/dakera-deploy
+home: https://github.com/dakera-ai/dakera-helm
 sources:
   - https://github.com/dakera-ai/dakera
 maintainers:
@@ -23,12 +23,10 @@ annotations:
       image: ghcr.io/dakera-ai/dakera:latest
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
-    - kind: added
-      description: Temporal hybrid search with entity-prefix reranking (CE-123)
     - kind: changed
-      description: Bump Dakera server to 0.11.55, dashboard to 0.3.28, MCP to 0.9.2
+      description: Bump Dakera server to 0.11.101, dashboard to 0.3.29, MCP to 0.10.11
     - kind: fixed
-      description: README now packaged in .tgz for ArtifactHub display
+      description: Fix chart home URL to reference dakera-helm (not dakera-deploy)
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
