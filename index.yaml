@@ -3,6 +3,42 @@ entries:
   dakera:
   - annotations:
       artifacthub.io/changes: |
+        - kind: changed
+          description: Bump Dakera server to 0.11.101, dashboard to 0.3.29, MCP to 0.10.11
+        - kind: fixed
+          description: Fix chart home URL to reference dakera-helm (not dakera-deploy)
+      artifacthub.io/images: |
+        - name: dakera
+          image: ghcr.io/dakera-ai/dakera:latest
+      artifacthub.io/official: "true"
+      artifacthub.io/signKey: |
+        fingerprint: keyless
+        url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
+    apiVersion: v2
+    appVersion: 0.11.101
+    created: "2026-07-23T02:26:30.83854699Z"
+    description: Dakera — AI agent memory platform
+    digest: f28104df3e772d7376455e6a8f516fdc1b594f719987e4e174771dc29a4642df
+    home: https://github.com/dakera-ai/dakera-helm
+    icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo.png
+    keywords:
+    - agent-memory
+    - ai-memory
+    - ai
+    - memory
+    - mcp
+    maintainers:
+    - name: Dakera AI
+      url: https://github.com/dakera-ai
+    name: dakera
+    sources:
+    - https://github.com/dakera-ai/dakera
+    type: application
+    urls:
+    - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.101/dakera-0.11.101.tgz
+    version: 0.11.101
+  - annotations:
+      artifacthub.io/changes: |
         - kind: added
           description: Temporal hybrid search with entity-prefix reranking (CE-123)
         - kind: changed
@@ -135,4 +171,4 @@ entries:
     urls:
     - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.55/dakera-0.11.55.tgz
     version: 0.11.55
-generated: "2026-05-14T07:23:23.165045241Z"
+generated: "2026-07-23T02:26:30.838570305Z"
