@@ -1,0 +1,96 @@
+name: Publish chart on dakera server release
+
+# Root-cause trigger (DAK-9921), replacing the daily freshness poll.
+# The dakera server release.yml fires repository_dispatch
+# (event_type: dakera-server-release) on every release. This workflow bumps the
+# chart appVersion to the released server version, commits to main, and then
+# explicitly dispatches helm-release + helm-publish-oci so the chart publishes to
+# Artifact Hub (GitHub Pages) + the GHCR OCI registry. dakera-helm is the single
+# build/publish source of truth for the chart. No polling, no drift detection.
+on:
+  repository_dispatch:
+    types: [dakera-server-release]
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Server version to sync to (e.g. v0.11.108)'
+        required: true
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: chart-appversion-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Bump chart to released server version and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve target server version
+        id: resolve
+        run: |
+          RAW="${{ github.event.client_payload.version || github.event.inputs.force_version }}"
+          if [ -z "$RAW" ]; then
+            echo "ERROR: no version in dispatch payload or manual input" >&2
+            exit 1
+          fi
+          TARGET="${RAW#v}"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Target server version: $TARGET"
+
+      - name: Read current chart appVersion
+        id: current
+        run: |
+          CURRENT=$(grep '^appVersion:' charts/dakera/Chart.yaml | sed 's/appVersion: *//;s/"//g')
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current chart appVersion: $CURRENT"
+
+      - name: Bump Chart.yaml + commit
+        if: steps.current.outputs.current != steps.resolve.outputs.target
+        run: |
+          TARGET="${{ steps.resolve.outputs.target }}"
+          sed -i "s/^version:.*/version: ${TARGET}/" charts/dakera/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${TARGET}\"/" charts/dakera/Chart.yaml
+          python3 - "$TARGET" <<'PY'
+          import re, sys
+          target = sys.argv[1]
+          with open("charts/dakera/Chart.yaml") as f:
+              c = f.read()
+          new = (
+              "  artifacthub.io/changes: |\n"
+              "    - kind: changed\n"
+              f"      description: Bump Dakera server to {target} (triggered by dakera release)\n"
+          )
+          c = re.sub(r"  artifacthub\.io/changes: \|.*?(?=\n  artifacthub|\Z)", new, c, flags=re.DOTALL)
+          with open("charts/dakera/Chart.yaml", "w") as f:
+              f.write(c)
+          PY
+          grep -E "^version:|^appVersion:" charts/dakera/Chart.yaml
+          git config user.name "dakera-release-bot"
+          git config user.email "release-bot@dakera.ai"
+          git add charts/dakera/Chart.yaml
+          git commit -m "chore(helm): bump chart to ${TARGET} (triggered by dakera server release)"
+          git push origin HEAD:main
+
+      - name: Publish chart (OCI + Artifact Hub)
+        # Explicit dispatch: a GITHUB_TOKEN commit does not re-trigger the
+        # charts/**-path workflows, so we invoke both publishers directly.
+        if: steps.current.outputs.current != steps.resolve.outputs.target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run helm-release.yml --ref main
+          gh workflow run helm-publish-oci.yml --ref main
+          echo "✅ Dispatched helm-release + helm-publish-oci for chart ${{ steps.resolve.outputs.target }}"
+
+      - name: Already in sync
+        if: steps.current.outputs.current == steps.resolve.outputs.target
+        run: echo "Chart already at ${{ steps.resolve.outputs.target }} — nothing to do."
