@@ -1,0 +1,137 @@
+name: Auto-sync appVersion with dakera server release
+
+on:
+  schedule:
+    # Daily at 09:00 UTC — catches any release from the previous day
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+    inputs:
+      force_version:
+        description: 'Override server version to sync to (e.g. v0.11.108). Leave empty to auto-detect.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    name: Check and sync chart appVersion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve target server version
+        id: resolve
+        run: |
+          if [ -n "${{ github.event.inputs.force_version }}" ]; then
+            TARGET="${{ github.event.inputs.force_version }}"
+            # Strip leading 'v' if present
+            TARGET="${TARGET#v}"
+          else
+            LATEST=$(curl -sf https://api.github.com/repos/dakera-ai/dakera/releases/latest \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              | jq -r '.tag_name // empty')
+            if [ -z "$LATEST" ]; then
+              echo "ERROR: Could not fetch latest dakera release" >&2
+              exit 1
+            fi
+            TARGET="${LATEST#v}"
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Resolved target server version: $TARGET"
+
+      - name: Read current chart appVersion
+        id: current
+        run: |
+          CURRENT=$(grep '^appVersion:' charts/dakera/Chart.yaml | sed 's/appVersion: *//;s/"//g')
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "Current chart appVersion: $CURRENT"
+
+      - name: Skip if already in sync
+        if: steps.current.outputs.current == steps.resolve.outputs.target
+        run: |
+          echo "Chart appVersion ${{ steps.current.outputs.current }} already matches server ${{ steps.resolve.outputs.target }}. Nothing to do."
+
+      - name: Bump Chart.yaml versions
+        if: steps.current.outputs.current != steps.resolve.outputs.target
+        run: |
+          TARGET="${{ steps.resolve.outputs.target }}"
+          sed -i "s/^version:.*/version: ${TARGET}/" charts/dakera/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${TARGET}\"/" charts/dakera/Chart.yaml
+          grep -E "^version:|^appVersion:" charts/dakera/Chart.yaml
+
+      - name: Update ArtifactHub changelog annotation
+        if: steps.current.outputs.current != steps.resolve.outputs.target
+        run: |
+          TARGET="${{ steps.resolve.outputs.target }}"
+          PREV="${{ steps.current.outputs.current }}"
+          # Replace the changes annotation block
+          python3 - <<'EOF'
+          import re, sys
+          with open("charts/dakera/Chart.yaml", "r") as f:
+              content = f.read()
+          new_changes = (
+              f"  artifacthub.io/changes: |\n"
+              f"    - kind: changed\n"
+              f"      description: Bump Dakera server to {sys.argv[1]} (auto-synced from dakera release)\n"
+          )
+          content = re.sub(
+              r"  artifacthub\.io/changes: \|.*?(?=\n  artifacthub|\nartifacthub|\Z)",
+              new_changes,
+              content,
+              flags=re.DOTALL
+          )
+          with open("charts/dakera/Chart.yaml", "w") as f:
+              f.write(content)
+          EOF
+          python3 -c "import sys; sys.argv=['', '$TARGET']" 2>/dev/null || true
+          # Use sed as fallback for the annotation update
+          python3 -c "
+          import re, sys
+          target = '$TARGET'
+          with open('charts/dakera/Chart.yaml', 'r') as f:
+              content = f.read()
+          new_changes = (
+              '  artifacthub.io/changes: |\n'
+              '    - kind: changed\n'
+              f'      description: Bump Dakera server to {target} (auto-synced from dakera release)\n'
+          )
+          content = re.sub(
+              r'  artifacthub\.io/changes: \|.*?(?=\n  artifacthub|\Z)',
+              new_changes,
+              content,
+              flags=re.DOTALL
+          )
+          with open('charts/dakera/Chart.yaml', 'w') as f:
+              f.write(content)
+          "
+
+      - name: Create Pull Request
+        if: steps.current.outputs.current != steps.resolve.outputs.target
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(helm): bump chart to v${{ steps.resolve.outputs.target }} (auto-sync)"
+          branch: "auto/appversion-sync-${{ steps.resolve.outputs.target }}"
+          delete-branch: true
+          title: "chore(helm): bump to v${{ steps.resolve.outputs.target }} (auto-synced)"
+          body: |
+            ## Auto-sync: chart appVersion bump
+
+            Automated appVersion sync triggered by the daily schedule (or manual dispatch).
+
+            | | Before | After |
+            |---|---|---|
+            | `version` | `${{ steps.current.outputs.current }}` | `${{ steps.resolve.outputs.target }}` |
+            | `appVersion` | `${{ steps.current.outputs.current }}` | `${{ steps.resolve.outputs.target }}` |
+
+            Source: [dakera-ai/dakera release v${{ steps.resolve.outputs.target }}](https://github.com/dakera-ai/dakera/releases/tag/v${{ steps.resolve.outputs.target }})
+
+            Once merged, the existing `helm-release` and `helm-publish-oci` workflows will
+            automatically package + push the updated chart to GHCR OCI and ArtifactHub.
+          labels: "auto-merge,helm"

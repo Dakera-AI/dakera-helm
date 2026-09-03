@@ -2,8 +2,8 @@ apiVersion: v2
 name: dakera
 description: Dakera — AI agent memory platform
 type: application
-version: 0.11.101
-appVersion: "0.11.101"
+version: 0.11.107
+appVersion: "0.11.107"
 keywords:
   - agent-memory
   - ai-memory
@@ -24,9 +24,9 @@ annotations:
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: Bump Dakera server to 0.11.101, dashboard to 0.3.29, MCP to 0.10.11
-    - kind: fixed
-      description: Fix chart home URL to reference dakera-helm (not dakera-deploy)
+      description: Bump Dakera server to 0.11.107 (watchdog-cleanup + OOM fixes)
+    - kind: added
+      description: Automated appVersion sync workflow — chart now tracks server releases automatically
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
