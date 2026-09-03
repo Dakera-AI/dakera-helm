@@ -4,6 +4,42 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: Bump Dakera server to 0.11.107 (watchdog-cleanup + OOM fixes)
+        - kind: added
+          description: Automated appVersion sync workflow — chart now tracks server releases automatically
+      artifacthub.io/images: |
+        - name: dakera
+          image: ghcr.io/dakera-ai/dakera:latest
+      artifacthub.io/official: "true"
+      artifacthub.io/signKey: |
+        fingerprint: keyless
+        url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
+    apiVersion: v2
+    appVersion: 0.11.107
+    created: "2026-09-03T08:34:04.214923791Z"
+    description: Dakera — AI agent memory platform
+    digest: 625ce6bec22064db20f541567f1faa5622788b6a21cd0a3619efc6e102b0f719
+    home: https://github.com/dakera-ai/dakera-helm
+    icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo.png
+    keywords:
+    - agent-memory
+    - ai-memory
+    - ai
+    - memory
+    - mcp
+    maintainers:
+    - name: Dakera AI
+      url: https://github.com/dakera-ai
+    name: dakera
+    sources:
+    - https://github.com/dakera-ai/dakera
+    type: application
+    urls:
+    - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.107/dakera-0.11.107.tgz
+    version: 0.11.107
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: Bump Dakera server to 0.11.101, dashboard to 0.3.29, MCP to 0.10.11
         - kind: fixed
           description: Fix chart home URL to reference dakera-helm (not dakera-deploy)
@@ -171,4 +207,4 @@ entries:
     urls:
     - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.55/dakera-0.11.55.tgz
     version: 0.11.55
-generated: "2026-07-23T02:26:30.838570305Z"
+generated: "2026-09-03T08:34:04.214947565Z"
