@@ -73,7 +73,7 @@ first; this chart follows it.
   `dakera.config.dataRoot`.
 - `rollback.enabled`: a one-off Job that runs `dakera downgrade`.
 - **v0.12 features, all off by default (`dakera.features.*`)**: `multilingual` (bge-m3, per-language full-text, CJK
-  bigrams, query languages), `multimodal` (attachments + speech to text), `vision` (image / page indexing and visual
+  bigrams, query languages), `multimodal` (attachments + speech to text; five Whisper models, English default plus multilingual with auto-detected language, chosen with `DAKERA_WHISPER_MODEL` through `dakera.extraEnv`), `vision` (image / page indexing and visual
   recall), `records` (multi-vector records), `lateInteraction` (colbert-small + MaxSim), `rabitq` (RaBitQ search mode).
   Each renders its variables into the ConfigMap, turns the model cache into a PVC and pre-pulls the models with an init
   container (`features.prePull`, `features.persistModelCache`), and (multimodal, vision) raises the resources to the

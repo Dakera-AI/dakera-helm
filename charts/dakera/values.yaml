@@ -106,7 +106,7 @@ dakera:
     # starts. Model names (`dakera models list`), or `configured`: what the
     # environment above configures (extraEnv included).
     #   pull: [configured]
-    #   pull: [bge-m3, whisper]
+    #   pull: [bge-m3, whisper]       # `whisper` is the default model; name another, e.g. whisper-base
     pull: []
     # Keep the model cache on a volume so a restarted or rescheduled pod does
     # not download again. Off: the cache is an emptyDir. Air-gapped: seed this
@@ -167,7 +167,16 @@ dakera:
       maxSeqLength: ""
 
     # Multimodal: attachments (files per agent, referenced from memories) + speech to text
-    # (whisper-tiny.en: English, WAV only, ~151 MB). Works on an existing store.
+    # (WAV only). Works on an existing store. The Whisper model is DAKERA_WHISPER_MODEL, set
+    # through dakera.extraEnv (default whisper-tiny.en, ~151 MB):
+    #   whisper-tiny.en  English (default)
+    #   whisper-base.en  English, better, still light
+    #   whisper-tiny     multilingual (~99 languages), language auto-detected
+    #   whisper-base     multilingual, the recommended multilingual choice
+    #   whisper-small    multilingual, the quality option
+    # Multilingual models record the detected language as the memory's lang (a per-request
+    # lang overrides it). Models are SHA-pinned; `dakera models pull` (dakera.models.pull)
+    # covers every variant. TODO: sizes of the new models once measured.
     multimodal:
       enabled: false
       # DAKERA_ATTACHMENT_MAX_BYTES: "" = 26214400 (25 MiB). Also bounded by DAKERA_MAX_BODY_SIZE
