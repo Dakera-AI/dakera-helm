@@ -293,7 +293,8 @@ spec:
             - name: http
               containerPort: {{ .Values.mcp.config.port }}
           env:
-            - name: DAKERA_URL
+            # The variable dakera-mcp reads (it falls back to http://localhost:3000).
+            - name: DAKERA_API_URL
               value: "http://{{ include "dakera.fullname" . }}:{{ .Values.dakera.config.port }}"
             - name: DAKERA_API_KEY
               valueFrom:

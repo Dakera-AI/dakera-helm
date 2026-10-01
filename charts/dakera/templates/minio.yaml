@@ -55,6 +55,22 @@ spec:
                 secretKeyRef:
                   name: {{ include "dakera.fullname" . }}-secrets
                   key: MINIO_ROOT_PASSWORD
+          # Creates the server's bucket: Dakera refuses to start on a missing bucket
+          # ("the S3 bucket refuses this process", 404), and MinIO creates none itself.
+          # Runs beside the server process once the container started; `mc` ships in the image.
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  # --config-dir: the MinIO user has no writable home. Gives up after 120 s
+                  # (a failed hook restarts the container, which tries again).
+                  - >-
+                    i=0; until mc --config-dir /tmp/.mc alias set local http://127.0.0.1:9000
+                    "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null 2>&1;
+                    do i=$((i+1)); [ "$i" -ge 120 ] && exit 1; sleep 1; done;
+                    mc --config-dir /tmp/.mc mb --ignore-existing local/{{ .Values.dakera.config.s3Bucket }}
           livenessProbe:
             httpGet:
               path: /minio/health/live

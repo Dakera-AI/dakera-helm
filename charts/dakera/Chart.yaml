@@ -34,7 +34,9 @@ annotations:
     - kind: removed
       description: DAKERA_L2_CACHE_PATH (v0.12 derives every path from DAKERA_STORAGE_PATH)
     - kind: fixed
-      description: The built-in MinIO is now actually deployed when minio.enabled=true
+      description: The built-in MinIO is now actually deployed when minio.enabled=true, creates the server's bucket, and uses cgr.dev/chainguard/minio (minio/minio is no longer on Docker Hub)
+    - kind: changed
+      description: mcp.enabled defaults to false (dakera-mcp is stdio-only and crash-loops as a pod); its Deployment now sets DAKERA_API_URL
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
