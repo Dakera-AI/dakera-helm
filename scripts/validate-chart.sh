@@ -49,5 +49,16 @@ expect_refusal "rabitq with another search mode"         --set dakera.features.r
 expect_refusal "rabitq bits without rabitq"              --set dakera.features.rabitq.bits=4
 expect_refusal "rabitq bits out of range"                --set dakera.features.rabitq.enabled=true --set dakera.features.rabitq.bits=9
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
+expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
+# The chart's Secret (where dakera.cluster.secret goes) is rendered only with rootApiKey.
+if "$HELM" template r "$CHART" --set minio.rootPassword=ci-lint --set dakera.cluster.secret=0123456789abcdef > /dev/null 2>&1; then
+  echo "FAIL: accepted (cluster secret without rootApiKey: it would be dropped)"; fail=1
+else
+  echo "ok: refused (cluster secret without rootApiKey)"
+fi
+
+echo "== built-in MinIO creates the server's bucket"
+"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.s3Bucket=ci-bucket | grep -q "mb --ignore-existing local/ci-bucket" \
+  || { echo "FAIL: MinIO does not create the bucket"; fail=1; }
 
 [ "$fail" = 0 ] && echo "chart validation passed" || { echo "chart validation FAILED"; exit 1; }

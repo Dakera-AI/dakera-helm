@@ -298,8 +298,12 @@ dashboard:
     port: 3000
 
 # ---- Dakera MCP Server ------------------------------------------------------
+# Off by default: dakera-mcp (0.10.x) speaks MCP over stdio only. As a pod nothing
+# writes to its stdin, so it exits at once and restarts in a loop (CrashLoopBackOff,
+# measured with 0.10.11); it never listens on mcp.config.port. Run it next to the MCP
+# client instead (`dakera-mcp` with DAKERA_API_URL and DAKERA_API_KEY).
 mcp:
-  enabled: true
+  enabled: false
   image:
     repository: ghcr.io/dakera-ai/dakera-mcp
     tag: "0.10.11"
@@ -325,9 +329,12 @@ mcp:
 # ---- MinIO (built-in S3) ----------------------------------------------------
 minio:
   enabled: true
+  # minio/minio is no longer published on Docker Hub (the repository is gone, so its
+  # tags cannot be pulled). Chainguard's maintained MinIO build; its free tier
+  # publishes `latest` only.
   image:
-    repository: minio/minio
-    tag: RELEASE.2025-04-08T15-41-24Z
+    repository: cgr.dev/chainguard/minio
+    tag: latest
     pullPolicy: IfNotPresent
 
   # Credentials — override via --set or external secret

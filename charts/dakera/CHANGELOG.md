@@ -26,9 +26,10 @@ first; this chart follows it.
    `/data/rocksdb`; the former `/data/cache` emptyDir is gone (the warm tier
    lives under the data root on the volume).
 5. **The server Deployment now uses `strategy: Recreate`** when persistence is on
-   (a server locks its data root; the old pod must stop first). If `helm upgrade`
-   rejects the strategy change, delete the Deployment (not the PVC) and upgrade
-   again.
+   (a server locks its data root; the old pod must stop first). Tested from
+   0.11.107: `helm upgrade` applied the switch itself, and kept the PVC and the
+   `<fullname>-secrets` Secret. Should an upgrade reject the strategy change,
+   delete the Deployment (not the PVC) and upgrade again.
 6. **Image tag**: `dakera.image.tag` defaults to the chart `appVersion` (it
    defaulted to a pinned tag before). Remove a stale pin from your values.
 7. **Autoscaling is off by default** (`dakera.autoscaling.enabled: false`): one
@@ -42,6 +43,12 @@ first; this chart follows it.
     keys pinned to namespaces lose node-wide routes: see the server UPGRADE.md.
 11. **Rollback** to v0.11.108: `rollback.enabled` Job (`dakera downgrade`), see
     the README, "Rolling back to v0.11".
+12. **S3 / MinIO**: 0.11.107 rendered no MinIO but pointed at `<fullname>-minio`, so
+    a working 0.11 install provides that service itself. With `minio.enabled: true`
+    (the default now) the upgrade fails ("Service ... exists and cannot be imported
+    into the current release"). Upgrade with `minio.enabled: false`,
+    `dakera.config.s3Endpoint` and the S3 credentials in `dakera.extraEnv` (README,
+    "Upgrading from chart 0.11.x").
 
 ### Changed
 - Chart and `appVersion` 0.12.0; the server image tag follows `appVersion`.
@@ -50,7 +57,9 @@ first; this chart follows it.
 - `DAKERA_S3_ENDPOINT` points at the built-in MinIO, or at `dakera.config.s3Endpoint`
   when `minio.enabled=false` (it always pointed at MinIO before).
 - `dakera.config.storage` accepts `memory`, `filesystem`, `s3` (the schema listed `local`).
-- MinIO image pinned (`RELEASE.2025-04-08T15-41-24Z`), default user `dakera-minio`,
+- MinIO image `cgr.dev/chainguard/minio:latest`: `minio/minio` is no longer published on
+  Docker Hub (the repository is gone; the earlier `latest` and the server chart's
+  `RELEASE.2025-04-08T15-41-24Z` cannot be pulled). Default user `dakera-minio`,
   resources raised to the server chart's.
 - Brought in line with the server repo's `charts/dakera` (0.12.0): pod
   `fsGroup: 1000`, model cache, `extraEnv`, `readOnlyRootFilesystem` option.
@@ -83,7 +92,16 @@ first; this chart follows it.
 - `dakera.config.l1CacheSize` default `"1073741824"` read as 1 GB, but the server reads a bare number of 10 million or
   more as bytes with a warning, and a smaller one as a vector count: the default is now `"1GB"` (same size, no warning).
 - `minio.enabled=true` now deploys MinIO (Deployment, PVC, Service); chart 0.11.x
-  referenced a MinIO service it never created.
+  referenced a MinIO service it never created. It also creates the server's bucket
+  (`postStart` hook with the image's `mc`): without it the server refuses to start
+  ("the S3 bucket refuses this process", 404), as found on kind.
+- MinIO image: `minio/minio` is no longer published on Docker Hub, so the pinned tag
+  could not be pulled (`ImagePullBackOff` on kind): `cgr.dev/chainguard/minio:latest`.
+- MCP: `mcp.enabled` is now `false`. dakera-mcp (0.10.x) speaks MCP over stdio only and
+  crash-looped as a pod (measured on kind with 0.10.11); the Deployment also set
+  `DAKERA_URL`, but dakera-mcp reads `DAKERA_API_URL` (fixed).
+- `dakera.cluster.secret` without `dakera.rootApiKey` was silently dropped (the chart's
+  Secret is rendered only with the root key): now refused with a message.
 
 ### Known limitations
 - `monitoring.enabled` still has no templates (Prometheus/Grafana are not

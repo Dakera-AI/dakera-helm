@@ -8,7 +8,7 @@
 
 - **Dakera Server** — persistent, searchable agent memory via REST + gRPC
 - **Dakera Dashboard** — web UI for inspecting and managing memories
-- **Dakera MCP Server** — Model Context Protocol server for Claude and other AI clients
+- **Dakera MCP Server** (off by default: dakera-mcp is stdio-only, see `mcp.enabled`)
 - **MinIO** — built-in S3-compatible object storage (or bring your own S3)
 
 → **Documentation**: [dakera.ai/docs](https://dakera.ai/docs)  
@@ -86,6 +86,33 @@ helm upgrade dakera dakera/dakera --namespace dakera \
   --set minio.rootPassword=<your-password>
 ```
 
+### Upgrading from chart 0.11.x
+
+Tested from 0.11.107 (server 0.11.108) to 0.12.0 on one release (kind): `helm upgrade` switches the
+Deployment from `RollingUpdate` to `Recreate`, keeps the data PVC `<fullname>-rocksdb` and the Secret
+`<fullname>-secrets` (same objects, same UIDs), and the memories v0.11.108 stored are recalled by 0.12.0
+(the pod was Ready 13 s after the upgrade).
+
+**The built-in MinIO is new in 0.12.0.** Chart 0.11.107 rendered no MinIO although it pointed
+`DAKERA_S3_ENDPOINT` at `<fullname>-minio:9000`, so a working 0.11 install has its own S3 service under that
+name. With `minio.enabled: true` (the default) the upgrade then fails with `Service "<fullname>-minio" exists
+and cannot be imported into the current release`. Keep your S3: turn the chart's MinIO off, point the
+server at it and pass the credentials yourself (with MinIO off the chart's Secret no longer carries
+`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`):
+
+```yaml
+minio:
+  enabled: false
+dakera:
+  config:
+    s3Endpoint: http://<fullname>-minio:9000      # what 0.11.107 used
+  extraEnv:
+    - name: AWS_ACCESS_KEY_ID
+      valueFrom: {secretKeyRef: {name: <your-s3-secret>, key: AWS_ACCESS_KEY_ID}}
+    - name: AWS_SECRET_ACCESS_KEY
+      valueFrom: {secretKeyRef: {name: <your-s3-secret>, key: AWS_SECRET_ACCESS_KEY}}
+```
+
 ---
 
 ## Configuration
@@ -121,7 +148,7 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `dakera.autoscaling.enabled` | `false` | Enable HPA (one server per data root; see values.yaml) |
 | `dakera.autoscaling.maxReplicas` | `5` | HPA max replicas |
 | `dashboard.enabled` | `true` | Deploy the web dashboard |
-| `mcp.enabled` | `true` | Deploy the MCP server |
+| `mcp.enabled` | `false` | dakera-mcp speaks MCP over stdio only: as a pod it exits at once (CrashLoopBackOff, measured with 0.10.11). Run it next to the MCP client |
 | `minio.enabled` | `true` | Deploy built-in MinIO (disable to use external S3) |
 | `minio.persistence.size` | `50Gi` | MinIO PVC size |
 | `ingress.enabled` | `false` | Enable ingress |
@@ -299,8 +326,7 @@ in the pod (`kubectl exec deploy/<release>-dakera -- dakera models list`).
   multilingual, lateInteraction or vision while `dakera.config.tiered` is on (the tiered embedding engine pins
   `bge-large` and refuses late interaction); rabitq with `dakera.config.searchMode` changed.
 - **Model cache.** While multilingual, lateInteraction, multimodal or vision is on, the model cache is a PVC
-  (`dakera.models.persistence.size`, default `10Gi`: about 4.8 GB holds bge-m3, whisper, colmodernvbert and GLiNER
-  with their ORT-format copies; `features.persistModelCache: false` keeps an emptyDir) and an init container runs
+  (`dakera.models.persistence.size`, default `10Gi`: measured: bge-m3 1.1 GB, whisper 367 MB, colmodernvbert 1.9 GB with their ORT copies; GLiNER ~782 MB to download, not measured converted; 10Gi holds all four; `features.persistModelCache: false` keeps an emptyDir) and an init container runs
   `dakera models pull configured` (`features.prePull: false` or an explicit `dakera.models.pull` list overrides it),
   so the pod becomes ready with the models on disk. The PVC is ReadWriteOnce: one server pod.
 - **Resources.** multimodal and vision replace `dakera.resources` with 500m / 1Gi requests and 4 cores / 8Gi
@@ -327,7 +353,11 @@ The image ships `bge-large` and the reranker in its own model store; they load
 in seconds with no network. Any other model (`DAKERA_MODEL=bge-m3`, whisper, the
 vision model, ...) downloads into the model cache (`/app/models`) on first use.
 The REST port answers while models load: `/health/live` is 200 from the start,
-`/health/ready` is 503 until storage and the embedding engine are up.
+`/health/ready` is 503 until storage and the embedding engine are up. Measured on
+kind with the images already on the node: a default install was Ready 24 s after
+`helm install` (MinIO start included); with `values-multilingual.yaml` the models
+init container pulled bge-m3 (570 MB, plus its ORT copy) in 11 s and the pod was
+Ready 25 s after install.
 
 - Pre-pull before the pod serves: `dakera.models.pull: [configured]` (or a list of names).
 - Keep the cache across pod restarts: `dakera.models.persistence.enabled: true`.
@@ -340,7 +370,8 @@ The REST port answers while models load: `/health/live` is 200 from the start,
 
 The server pod is annotated for Prometheus (`prometheus.io/scrape`, port 3000, path `/metrics`). The server's v0.12 alert
 rules and dashboard are shipped as opt-in objects (off by default), both copied from the server repository, and every
-expression and panel reads a metric the v0.12 server emits:
+expression and panel reads a metric the v0.12 server emits (checked against a running 0.12.0 server; many appear in
+`/metrics` only once their event has happened: failures, cluster, encryption, Redis, media jobs):
 
 ```yaml
 monitoring:
@@ -390,14 +421,19 @@ helm template dakera dakera/dakera -n dakera <your usual values> \
   --set rollback.enabled=true --show-only templates/rollback-job.yaml \
   | kubectl -n dakera apply -f -
 kubectl -n dakera wait --for=condition=complete job/<fullname>-downgrade --timeout=30m
-kubectl -n dakera logs job/<fullname>-downgrade 2>/dev/null   # JSON report on stdout
+kubectl -n dakera logs job/<fullname>-downgrade   # the log, then the JSON report (the last {...} block)
 # 3. only when the Job completed (exit 0): go back to the v0.11 chart
 helm upgrade dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.11.107 -n dakera \
   --set dakera.image.tag=0.11.108 <your v0.11 values>
 ```
 
 Exit code `0` = the data is v0.11.108's; `1` = not yet (do **not** start v0.11,
-fix the cause and rerun); `78` = refused. Clusters: roll back the whole cluster,
+fix the cause and rerun); `78` = refused, nothing changed (a server still runs on
+the data, a v0.12-only feature, or no data found). `kubectl logs` shows the
+container's stderr (the log) and stdout (the report) together. Tested on kind:
+with the server running the Job failed with exit 78; scaled to 0 it completed in
+3 s (`completed: true`), and chart 0.11.107 with server 0.11.108 then recalled
+the data. Clusters: roll back the whole cluster,
 not one node. Details, the memory-policy and knowledge-graph notes and the model
 volume (`dakera models prune`) caveat: server
 [UPGRADE.md, "Going back to v0.11"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#going-back-to-v011).
