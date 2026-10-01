@@ -144,7 +144,7 @@ dakera:
     #     model whose one-time conversion would not fit the memory budget is converted
     #     outside the server;
     #   persistModelCache: the model cache is a PVC (dakera.models.persistence.size, 10Gi by
-    #     default: bge-m3 ~570 MB, colbert-small ~34 MB, whisper-tiny.en ~151 MB,
+    #     default: bge-m3 ~570 MB, colbert-small ~34 MB, whisper-tiny.en ~151 MB (the default whisper-base: TODO, being measured),
     #     colmodernvbert ~966 MB, GLiNER ~782 MB, each plus an ORT-format copy of about the
     #     same size) so a restarted pod does not download again. ReadWriteOnce: one server pod.
     prePull: true
@@ -168,12 +168,14 @@ dakera:
 
     # Multimodal: attachments (files per agent, referenced from memories) + speech to text
     # (WAV only). Works on an existing store. The Whisper model is DAKERA_WHISPER_MODEL, set
-    # through dakera.extraEnv (default whisper-tiny.en, ~151 MB):
-    #   whisper-tiny.en  English (default)
-    #   whisper-base.en  English, better, still light
-    #   whisper-tiny     multilingual (~99 languages), language auto-detected
-    #   whisper-base     multilingual, the recommended multilingual choice
+    # through dakera.extraEnv (default whisper-base):
+    #   whisper-base     multilingual (~99 languages), language auto-detected; the default, recommended
+    #   whisper-tiny.en  English, the lightest (~151 MB)
+    #   whisper-base.en  English, better
+    #   whisper-tiny     multilingual, the lightest
     #   whisper-small    multilingual, the quality option
+    # Upgrading: with no DAKERA_WHISPER_MODEL set, speech now transcribes with whisper-base;
+    # set whisper-tiny.en to keep the lightest English model.
     # Multilingual models record the detected language as the memory's lang (a per-request
     # lang overrides it). Models are SHA-pinned; `dakera models pull` (dakera.models.pull)
     # covers every variant. TODO: sizes of the new models once measured.

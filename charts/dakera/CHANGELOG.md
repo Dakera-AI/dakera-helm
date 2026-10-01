@@ -51,6 +51,8 @@ first; this chart follows it.
     "Upgrading from chart 0.11.x").
 
 ### Changed
+
+- Speech to text defaults to `whisper-base` (multilingual, language auto-detected), not English-only `whisper-tiny.en`: a deployment that enables `features.multimodal` and sets no `DAKERA_WHISPER_MODEL` now transcribes with `whisper-base`. Set `DAKERA_WHISPER_MODEL=whisper-tiny.en` through `dakera.extraEnv` to keep the lightest English model.
 - Chart and `appVersion` 0.12.0; the server image tag follows `appVersion`.
 - Readiness probe `/health/ready`; liveness `/health/live`; new startup probe
   (10 minutes) for write-ahead-log replay.
@@ -73,7 +75,7 @@ first; this chart follows it.
   `dakera.config.dataRoot`.
 - `rollback.enabled`: a one-off Job that runs `dakera downgrade`.
 - **v0.12 features, all off by default (`dakera.features.*`)**: `multilingual` (bge-m3, per-language full-text, CJK
-  bigrams, query languages), `multimodal` (attachments + speech to text; five Whisper models, English default plus multilingual with auto-detected language, chosen with `DAKERA_WHISPER_MODEL` through `dakera.extraEnv`), `vision` (image / page indexing and visual
+  bigrams, query languages), `multimodal` (attachments + speech to text; five Whisper models, default `whisper-base` (multilingual, language auto-detected), chosen with `DAKERA_WHISPER_MODEL` through `dakera.extraEnv`), `vision` (image / page indexing and visual
   recall), `records` (multi-vector records), `lateInteraction` (colbert-small + MaxSim), `rabitq` (RaBitQ search mode).
   Each renders its variables into the ConfigMap, turns the model cache into a PVC and pre-pulls the models with an init
   container (`features.prePull`, `features.persistModelCache`), and (multimodal, vision) raises the resources to the
