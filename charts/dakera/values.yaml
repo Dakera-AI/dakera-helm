@@ -32,8 +32,12 @@ dakera:
     # of it lands on the PVC. Keep it equal to the image's root (/data) unless
     # you also change where the volume should go.
     dataRoot: /data
-    # Tiered-storage settings: no effect unless tieredStorage is true.
-    l1CacheSize: "1073741824"  # 1 GB
+    # Tiered-storage settings: no effect unless tieredStorage is true (tiered storage
+    # needs storage: s3). l1CacheSize is the hot-tier budget: with a unit suffix ("1GB",
+    # "512MB") it is bytes; a bare number below 10 million is a vector COUNT (the server's
+    # default is 100000 vectors) and a bare number of 10 million or more is bytes, with a
+    # startup warning. Use the suffix.
+    l1CacheSize: "1GB"
     tieredStorage: true
     hotToWarmSecs: 3600
     warmToColdSecs: 86400
@@ -113,6 +117,109 @@ dakera:
       size: 10Gi
       storageClass: ""
       accessMode: ReadWriteOnce
+
+  # ---- v0.12 features (ALL OFF BY DEFAULT) ----------------------------------------------
+  # Each block switches one v0.12 feature on, with the variables it needs, and wires what
+  # it implies (the model cache volume, an init container that pulls the models, resources).
+  # With everything off the chart renders exactly what it did without this block. Per
+  # feature: what it is, the resources it costs, what it cannot be combined with and how to
+  # verify it: README, "Features in v0.12.0", and the dakera-deploy guide docs/features-v0.12.md.
+  #
+  # Checks (helm refuses to render, with a message, instead of a pod that exits at start):
+  #   * multilingual, lateInteraction and vision need dakera.config.tiered: "0" (the tiered
+  #     embedding engine always embeds with bge-large and refuses late interaction);
+  #   * multilingual and lateInteraction are exclusive (one embedding model per store);
+  #   * vision is a store of its own: not with multilingual / lateInteraction, and install it
+  #     as its own release (its namespaces hold 128-d page vectors, not text embeddings);
+  #   * rabitq needs dakera.config.searchMode left at "hybrid".
+  # multilingual, lateInteraction and vision change the embedding model or the lane: a FRESH
+  # store only. To move an existing store, acknowledge the change for ONE rollout with
+  # extraEnv DAKERA_ALLOW_MODEL_CHANGE=1 and re-embed (see the extraEnv note above). They
+  # are one-way for v0.11 (`dakera downgrade` refuses them).
+  features:
+    # When a feature that needs a model outside the image is on (multilingual,
+    # lateInteraction, multimodal, vision):
+    #   prePull: an init container runs `dakera models pull configured` (when
+    #     dakera.models.pull is empty), so the pod is ready with the models on disk and a
+    #     model whose one-time conversion would not fit the memory budget is converted
+    #     outside the server;
+    #   persistModelCache: the model cache is a PVC (dakera.models.persistence.size, 10Gi by
+    #     default: bge-m3 ~570 MB, colbert-small ~34 MB, whisper-tiny.en ~151 MB,
+    #     colmodernvbert ~966 MB, GLiNER ~782 MB, each plus an ORT-format copy of about the
+    #     same size) so a restarted pod does not download again. ReadWriteOnce: one server pod.
+    prePull: true
+    persistModelCache: true
+
+    # Multilingual: bge-m3 (1024-d, CPU ONNX only, ~570 MB download) + per-language
+    # full-text + CJK bigrams + multilingual query routing. Per request: "lang".
+    multilingual:
+      enabled: false
+      # BM25 analyzer of NEWLY created namespace indexes (DAKERA_FULLTEXT_LANGUAGE): an ISO
+      # 639-1 code or English name (de, french, pt-BR, ...), or zh/ja/ko/th/none/multilingual
+      # (no stemming). Existing namespaces: POST /admin/fulltext/reindex {"rebuild": true}.
+      fulltextLanguage: multilingual
+      # DAKERA_FULLTEXT_CJK_BIGRAMS: "" follows the language (on unless en); "true" / "false".
+      cjkBigrams: ""
+      # DAKERA_QUERY_LANG: en de fr es it pt nl, or auto (detected per query).
+      queryLang: auto
+      # DAKERA_MAX_SEQ_LENGTH: "" = the model's default cap (2048 for bge-m3; it supports
+      # 8192 at about 4 GiB of attention scores per layer per row).
+      maxSeqLength: ""
+
+    # Multimodal: attachments (files per agent, referenced from memories) + speech to text
+    # (whisper-tiny.en: English, WAV only, ~151 MB). Works on an existing store.
+    multimodal:
+      enabled: false
+      # DAKERA_ATTACHMENT_MAX_BYTES: "" = 26214400 (25 MiB). Also bounded by DAKERA_MAX_BODY_SIZE
+      # (dakera.config.maxBodySize).
+      attachmentMaxBytes: ""
+      # DAKERA_MEM_HIGH_WATER_FRACTION: "" = 0.85. A media job reserves its peak memory against
+      # the limit x this, waits up to 10 s, then answers 503 + Retry-After.
+      memHighWaterFraction: ""
+      # Used INSTEAD of dakera.resources while this feature is on: the measured configuration
+      # is a 4-core / 8 GiB container with every model loaded (530 MiB anonymous memory; an image
+      # page peaks +1.9 GiB at 17 tiles). null (--set dakera.features.multimodal.resources=null) keeps dakera.resources.
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+
+    # Vision: image / page indexing and visual recall (colmodernvbert, ~966 MB, ~10.7 s per
+    # page on CPU, one page at a time; PNG only). Implies attachments. A DEDICATED store: install
+    # it as its own release (own MinIO / bucket and data volume), never over a text store.
+    vision:
+      enabled: false
+      # Used INSTEAD of dakera.resources (and of multimodal.resources) while vision is on; null keeps dakera.resources.
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+
+    # Multi-vector records: POST /v1/namespaces/{ns}/records, one indexed vector plus up to 8
+    # named extra representations. Works on an existing store.
+    records:
+      enabled: false
+      maxVectors: ""   # DAKERA_RECORD_MAX_VECTORS, "" = 4096
+      maxBytes: ""     # DAKERA_RECORD_MAX_BYTES, "" = 8388608 (8 MiB)
+
+    # Late interaction: DAKERA_MODEL=colbert-small (~34 MB, 96-d token vectors) +
+    # DAKERA_SCORING_STRATEGY=late-interaction: recall reranks with MaxSim per token. Opt-in
+    # for a reason: on the same LoCoMo harness it scored below bge-large (better only on
+    # multi-hop questions; server RELEASE_NOTES).
+    lateInteraction:
+      enabled: false
+
+    # RaBitQ search mode (DAKERA_SEARCH_MODE=rabitq): a LATENCY option. Its codes sit in memory
+    # next to the float vectors (no memory saving) and are rebuilt after a restart.
+    rabitq:
+      enabled: false
+      bits: ""         # DAKERA_RABITQ_BITS: 1-8, "" = 1 (4 is the usual quality point)
 
   # The image runs as uid/gid 1000 (`dakera`). fsGroup gives that group the
   # volumes the chart mounts (data PVC, model cache, emptyDirs) so a provisioner
@@ -264,7 +371,26 @@ ingress:
 
 # ---- Monitoring (Prometheus + Grafana) -------------------------------------
 monitoring:
+  # NOTE: `enabled` still has no templates (it never had): the Prometheus / Grafana blocks
+  # below are inert. Use your own Prometheus (the server pod is annotated
+  # prometheus.io/scrape, port, path /metrics) and the two opt-in objects that follow.
   enabled: false
+
+  # The server's v0.12 alert rules as a Prometheus Operator PrometheusRule (the CRD must
+  # exist): config warnings, degraded components, WAL, model loads, backups, encryption,
+  # cold tier, RocksDB, cluster replication. Off by default. `labels` is what your
+  # Prometheus' ruleSelector matches (kube-prometheus-stack: `release: <its release>`).
+  # DakeraDown matches job="dakera": name your scrape job so, or edit the rule.
+  prometheusRule:
+    enabled: false
+    labels: {}
+
+  # The server's v0.12 "Dakera Overview" dashboard as a ConfigMap for Grafana's dashboard
+  # sidecar (kube-prometheus-stack loads label grafana_dashboard: "1"). Off by default.
+  grafanaDashboard:
+    enabled: false
+    label: grafana_dashboard
+    labelValue: "1"
 
   prometheus:
     image:

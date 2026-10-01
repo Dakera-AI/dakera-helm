@@ -63,12 +63,25 @@ first; this chart follows it.
 - `dakera.extraEnv`, `dakera.podSecurityContext`, `dakera.readOnlyRootFilesystem`,
   `dakera.config.dataRoot`.
 - `rollback.enabled`: a one-off Job that runs `dakera downgrade`.
+- **v0.12 features, all off by default (`dakera.features.*`)**: `multilingual` (bge-m3, per-language full-text, CJK
+  bigrams, query languages), `multimodal` (attachments + speech to text), `vision` (image / page indexing and visual
+  recall), `records` (multi-vector records), `lateInteraction` (colbert-small + MaxSim), `rabitq` (RaBitQ search mode).
+  Each renders its variables into the ConfigMap, turns the model cache into a PVC and pre-pulls the models with an init
+  container (`features.prePull`, `features.persistModelCache`), and (multimodal, vision) raises the resources to the
+  measured 4 cores / 8 GiB. The chart refuses, with a message, combinations the server cannot run (multilingual with
+  lateInteraction, vision with a text model, any model-changing feature while `dakera.config.tiered` is on, rabitq with a
+  changed `searchMode`). Example values in `charts/dakera/examples/`. With every feature off the render is unchanged.
+- `monitoring.prometheusRule` (the server's v0.12 alert rules as a `PrometheusRule`) and `monitoring.grafanaDashboard`
+  (the server's v0.12 dashboard as a ConfigMap for Grafana's sidecar), both off by default.
+- `values.schema.json` covers `dakera.features` and `monitoring`.
 
 ### Removed
 - `dakera.config.l2CachePath` / `DAKERA_L2_CACHE_PATH` (no longer read by v0.12;
   every local path derives from `DAKERA_STORAGE_PATH`).
 
 ### Fixed
+- `dakera.config.l1CacheSize` default `"1073741824"` read as 1 GB, but the server reads a bare number of 10 million or
+  more as bytes with a warning, and a smaller one as a vector count: the default is now `"1GB"` (same size, no warning).
 - `minio.enabled=true` now deploys MinIO (Deployment, PVC, Service); chart 0.11.x
   referenced a MinIO service it never created.
 

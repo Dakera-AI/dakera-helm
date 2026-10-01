@@ -1,0 +1,19 @@
+{{- if .Values.monitoring.prometheusRule.enabled }}
+# The server's own v0.12 alert rules (files/dakera.rules.yml, copied from the server
+# repository) as a Prometheus Operator PrometheusRule (the CRD must exist). Every
+# expression reads a metric the v0.12 server emits. DakeraDown matches job="dakera":
+# give your ServiceMonitor / scrape job that name, or edit the rule.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "dakera.fullname" . }}-rules
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dakera.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    {{- (fromYaml (.Files.Get "files/dakera.rules.yml")).groups | toYaml | nindent 4 }}
+{{- end }}

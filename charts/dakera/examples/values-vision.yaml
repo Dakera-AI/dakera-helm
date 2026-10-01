@@ -1,0 +1,8 @@
+# Image / page indexing + visual recall (colmodernvbert). A DEDICATED store: install it as
+# its own release, never over a text store.
+dakera:
+  config:
+    tiered: "0"
+  features:
+    vision:
+      enabled: true

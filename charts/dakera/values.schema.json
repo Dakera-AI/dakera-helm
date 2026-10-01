@@ -30,9 +30,9 @@
             "s3Bucket": {"type": "string", "description": "S3 bucket name"},
             "s3Region": {"type": "string", "description": "S3 region"},
             "s3Endpoint": {"type": "string", "description": "Custom S3 endpoint (for MinIO or external providers)"},
-            "l1CacheSize": {"type": "string", "description": "L1 in-memory cache size in bytes"},
+            "l1CacheSize": {"type": "string", "description": "DAKERA_L1_CACHE_SIZE: the tiered-storage hot-tier budget. A unit suffix (1GB, 512MB) is bytes; a bare number below 10 million is a vector count"},
             "dataRoot": {"type": "string", "description": "Data root (DAKERA_STORAGE_PATH); every local path derives from it and the persistence volume is mounted here"},
-            "tiered": {"type": "string", "description": "DAKERA_TIERED: the tiered embedding engine (not tiered storage)"},
+            "tiered": {"type": ["string", "integer", "boolean"], "description": "DAKERA_TIERED: the tiered embedding engine (not tiered storage). \"1\" / true on, \"0\" / false off"},
             "searchMode": {"type": "string", "description": "DAKERA_SEARCH_MODE"},
             "tieredStorage": {"type": "boolean", "description": "Enable tiered storage (hot/warm/cold)"},
             "hotToWarmSecs": {"type": "integer", "description": "Seconds before hot memory moves to warm tier"},
@@ -71,6 +71,65 @@
                 "size": {"type": "string"},
                 "storageClass": {"type": "string"},
                 "accessMode": {"type": "string", "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadWriteOncePod"]}
+              }
+            }
+          }
+        },
+        "features": {
+          "type": "object",
+          "description": "v0.12 features, all off by default (see values.yaml and the README, \"Features in v0.12.0\")",
+          "properties": {
+            "prePull": {"type": "boolean", "description": "Pull the models the enabled features load in an init container (dakera models pull configured)"},
+            "persistModelCache": {"type": "boolean", "description": "Keep the model cache on a PVC while a feature that needs models is enabled"},
+            "multilingual": {
+              "type": "object",
+              "description": "bge-m3, per-language full-text, CJK bigrams, multilingual query routing",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "fulltextLanguage": {"type": "string", "description": "DAKERA_FULLTEXT_LANGUAGE"},
+                "cjkBigrams": {"type": "string", "enum": ["", "true", "false"], "description": "DAKERA_FULLTEXT_CJK_BIGRAMS (empty follows the language)"},
+                "queryLang": {"type": "string", "enum": ["", "auto", "en", "de", "fr", "es", "it", "pt", "nl"], "description": "DAKERA_QUERY_LANG"},
+                "maxSeqLength": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 16, "description": "DAKERA_MAX_SEQ_LENGTH"}
+              }
+            },
+            "multimodal": {
+              "type": "object",
+              "description": "Attachments and speech to text",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "attachmentMaxBytes": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 1, "description": "DAKERA_ATTACHMENT_MAX_BYTES"},
+                "memHighWaterFraction": {"type": ["string", "number"], "exclusiveMinimum": 0, "maximum": 1, "description": "DAKERA_MEM_HIGH_WATER_FRACTION, a number in (0, 1]"},
+                "resources": {"type": "object", "description": "Used instead of dakera.resources while the feature is on"}
+              }
+            },
+            "vision": {
+              "type": "object",
+              "description": "Image / page indexing and visual recall (a dedicated store)",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "resources": {"type": "object", "description": "Used instead of dakera.resources while the feature is on"}
+              }
+            },
+            "records": {
+              "type": "object",
+              "description": "Multi-vector records",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "maxVectors": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 1, "description": "DAKERA_RECORD_MAX_VECTORS"},
+                "maxBytes": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 1, "description": "DAKERA_RECORD_MAX_BYTES"}
+              }
+            },
+            "lateInteraction": {
+              "type": "object",
+              "description": "colbert-small + MaxSim",
+              "properties": {"enabled": {"type": "boolean"}}
+            },
+            "rabitq": {
+              "type": "object",
+              "description": "RaBitQ search mode",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "bits": {"type": ["string", "integer"], "pattern": "^[1-8]?$", "minimum": 1, "maximum": 8, "description": "DAKERA_RABITQ_BITS, 1-8"}
               }
             }
           }
@@ -266,7 +325,24 @@
       "type": "object",
       "description": "Prometheus + Grafana monitoring stack",
       "properties": {
-        "enabled": {"type": "boolean", "description": "Enable monitoring components"},
+        "enabled": {"type": "boolean", "description": "Enable monitoring components (no templates: use prometheusRule / grafanaDashboard below)"},
+        "prometheusRule": {
+          "type": "object",
+          "description": "The server's v0.12 alert rules as a Prometheus Operator PrometheusRule",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "labels": {"type": "object", "description": "Extra labels (your Prometheus' ruleSelector)"}
+          }
+        },
+        "grafanaDashboard": {
+          "type": "object",
+          "description": "The server's v0.12 dashboard as a ConfigMap for Grafana's dashboard sidecar",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "label": {"type": "string"},
+            "labelValue": {"type": "string"}
+          }
+        },
         "prometheus": {
           "type": "object",
           "properties": {

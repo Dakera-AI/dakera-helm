@@ -29,6 +29,8 @@ annotations:
       description: Probes read /health/live (liveness + startup) and /health/ready (readiness); the port answers while models load
     - kind: added
       description: DAKERA_CLUSTER_SECRET through a Secret (dakera.cluster), model cache volume and pre-pull (dakera.models), fsGroup, extraEnv, optional rollback Job (dakera downgrade)
+    - kind: added
+      description: Opt-in v0.12 features (dakera.features) - multilingual, multimodal, vision, records, late interaction, RaBitQ - with the model cache, models pre-pull and resources wired, plus a PrometheusRule and a Grafana dashboard
     - kind: removed
       description: DAKERA_L2_CACHE_PATH (v0.12 derives every path from DAKERA_STORAGE_PATH)
     - kind: fixed

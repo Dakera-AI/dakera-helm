@@ -1,0 +1,34 @@
+name: Chart CI
+
+# Pull requests had no check at all (the release workflows run on push to main). This lints and
+# renders the chart for the defaults, every v0.12 feature and their combinations, and checks that
+# the combinations the server cannot run are refused. Same helm version as the release workflow.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'charts/**'
+      - 'scripts/validate-chart.sh'
+      - '.github/workflows/helm-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Lint and render the chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.14.4
+
+      - name: Validate the chart
+        run: scripts/validate-chart.sh

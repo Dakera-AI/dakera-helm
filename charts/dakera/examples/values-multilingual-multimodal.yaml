@@ -1,0 +1,9 @@
+# Multilingual search + attachments and speech to text. FRESH STORE ONLY.
+dakera:
+  config:
+    tiered: "0"
+  features:
+    multilingual:
+      enabled: true
+    multimodal:
+      enabled: true

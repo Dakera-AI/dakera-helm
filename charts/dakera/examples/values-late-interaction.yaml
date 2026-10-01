@@ -1,0 +1,7 @@
+# Late interaction with colbert-small. FRESH STORE ONLY.
+dakera:
+  config:
+    tiered: "0"
+  features:
+    lateInteraction:
+      enabled: true

@@ -1,0 +1,5 @@
+# Attachments + speech to text (whisper-tiny.en: English, WAV only). Works on an existing store.
+dakera:
+  features:
+    multimodal:
+      enabled: true

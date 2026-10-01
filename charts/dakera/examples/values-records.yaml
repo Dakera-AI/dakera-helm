@@ -1,0 +1,5 @@
+# Multi-vector records. Works on an existing store.
+dakera:
+  features:
+    records:
+      enabled: true
