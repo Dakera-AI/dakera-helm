@@ -1,4 +1,6 @@
-# Attachments + speech to text (whisper-tiny.en: English, WAV only). Works on an existing store.
+# Attachments + speech to text (WAV only). Works on an existing store.
+# Whisper model: default whisper-tiny.en (English). To choose another, add to dakera.extraEnv
+# DAKERA_WHISPER_MODEL = whisper-base.en | whisper-tiny | whisper-base | whisper-small (see README).
 dakera:
   features:
     multimodal:
