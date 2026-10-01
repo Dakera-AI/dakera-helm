@@ -113,6 +113,34 @@ dakera:
       valueFrom: {secretKeyRef: {name: <your-s3-secret>, key: AWS_SECRET_ACCESS_KEY}}
 ```
 
+### After upgrading data from v0.11: rebuild the full-text indexes
+
+**Required post-upgrade step.** After you upgrade a release that holds data from v0.11.108, rebuild its
+full-text indexes once. Until you do, keyword search and keyword-style recall can return nothing. Fresh
+v0.12.0 installs do not need it. From v0.12.1 (not released yet) Dakera applies it automatically; until
+then, run it yourself.
+
+Full-text indexes built by v0.11 are re-analysed under v0.12's text analysis. The rebuild does that once,
+so keyword search and keyword-style recall return results again. It only rebuilds derived search indexes;
+memories are not touched. On a production deployment with about 18,000 memories it took about 18 seconds.
+Wait until the pod is Ready, forward the service and call the endpoint with a key of global `admin` scope
+(the root API key works):
+
+```bash
+kubectl port-forward -n dakera svc/dakera 3000:3000 &
+curl -X POST http://localhost:3000/admin/fulltext/reindex \
+  -H "x-api-key: <global admin key>" -H "content-type: application/json" \
+  -d '{"rebuild": true}'
+```
+
+Adjust the namespace and the service name (`<fullname>`, `dakera` for a release named `dakera`). Omit
+`namespace` from the body to cover every agent memory namespace; add `"namespace": "<ns>"` for one. A
+one-off Job from an image that has `curl`, pointed at `http://<fullname>.<namespace>.svc:3000`, works
+the same way.
+
+Check it: a keyword search (`POST /v1/namespaces/<ns>/fulltext/search` with a common word) returns hits,
+and a short keyword recall returns memories.
+
 ---
 
 ## Configuration
