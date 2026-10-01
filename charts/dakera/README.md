@@ -186,7 +186,111 @@ helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.12.0 
 # several combinable features: examples/values-combined.yaml (multilingual + multimodal + records + rabitq)
 ```
 
-**What the chart does for you when a feature is on.**
+### Multilingual
+
+bge-m3 (1024-d, multilingual, CPU ONNX only) with full-text stemming and stop words per language, character-bigram
+indexing of Chinese / Japanese / Korean / Thai text, and dates and temporal expressions understood in seven query
+languages (`en de fr es it pt nl`). Use it when agents store or search text in languages other than English.
+
+```yaml
+dakera:
+  config: {tiered: "0"}              # the tiered embedding engine pins bge-large
+  features:
+    multilingual:
+      enabled: true
+      fulltextLanguage: de           # new namespace indexes; or multilingual (no stemming), zh, ja, ko, th, ...
+      queryLang: auto                # en de fr es it pt nl, or auto (per query)
+```
+
+Requests may also send `"lang"`. A fresh store only (see below). Verify: `default_model` is `bge-m3`, `fulltext_language`
+and `query_languages` on `/v1/capabilities`. Re-analyse an existing namespace: `POST /admin/fulltext/reindex`
+`{"namespace": "...", "rebuild": true}`. The model is ~570 MB, not in the image; truncation defaults to 2048 tokens
+(`maxSeqLength`: it supports 8192, at about 4 GiB of attention scores per layer per row).
+
+### Multimodal: attachments and speech to text
+
+Files stored per agent and referenced from memories (`attachment_ref`, counted by quotas, backed up, replicated), and a
+transcription job that turns a WAV recording into a memory (`whisper-tiny.en`: English only). Without it the routes answer
+`501 FEATURE_DISABLED`. Works on an existing store.
+
+```yaml
+dakera:
+  features:
+    multimodal:
+      enabled: true
+      attachmentMaxBytes: 26214400   # the default, 25 MiB; DAKERA_MAX_BODY_SIZE (dakera.config.maxBodySize) also applies
+```
+
+Every media job reserves its estimated peak memory first (limit x 0.85), waits up to 10 s, then answers `503` +
+`Retry-After`: clients retry. Jobs live in memory (a restart forgets their ids; the stored memory stays). Verify:
+`attachments.enabled` and `attachments.transcription.model` on `/v1/capabilities`.
+
+### Vision: image and page indexing, visual recall
+
+`colmodernvbert` embeds PNG pages (`POST .../attachments/{ref}/index`) and recall over the pages embeds the query with the
+model's text side (ViDoRe nDCG@5: TabFQuAD 0.643, Shift Project 0.7705). About 10.7 s per page on CPU, one page at a time; up to
+2 500 pages wait, then `503`. **A store of its own**: the namespaces hold 128-d page vectors, so install it as its own release
+(own MinIO / bucket and volume), never over a text store.
+
+```yaml
+dakera:
+  config: {tiered: "0"}              # late interaction is refused under the tiered embedding engine
+  features:
+    vision: {enabled: true}
+```
+
+~966 MB (+ an ORT-format copy); the conversion reserves ~1 GB from the memory budget, which is why the init container pulls it
+before the server starts. Verify: `vision.enabled`, `scoring.late_interaction.lane` = `visual`.
+
+### Multi-vector records
+
+`POST /v1/namespaces/{ns}/records`: one indexed vector plus up to 8 named extra representations (`dense`, `token_multivector`,
+`patch_multivector`, stored as `f32`, `f16` or `i8`). Limits of one record's extras: 4096 vectors and 8 MiB (`maxVectors`,
+`maxBytes`; over = `413`). No record delete route: delete through the vector routes. Works on an existing store.
+
+```yaml
+dakera:
+  features:
+    records: {enabled: true}
+```
+
+### Late interaction
+
+`DAKERA_MODEL=colbert-small` (96-d token vectors, ~34 MB) with `DAKERA_SCORING_STRATEGY=late-interaction`: recall shortlists by
+each memory's fixed-dimensional encoding and reranks with MaxSim per token. Opt-in because on the same LoCoMo harness it scored
+below bge-large (better only on multi-hop questions). Steady recall p50 0.10 s at 1k memories, 0.23 s at 10k; right after a bulk
+ingest the dense first stage serves while the late-interaction stage rebuilds. Needs `config.tiered: "0"` (`501` otherwise) and a
+fresh store.
+
+```yaml
+dakera:
+  config: {tiered: "0"}
+  features:
+    lateInteraction: {enabled: true}
+```
+
+Verify: `scoring.late_interaction.enabled` and `.model_supported`; `late_interaction_stats.reranked` > 0 once searches ran.
+
+### RaBitQ search mode
+
+`DAKERA_SEARCH_MODE=rabitq` walks the HNSW graph on RaBitQ codes and re-ranks the shortlist with exact float distances; `bits` 1 to 8
+(4 is the usual quality point). **A latency option: it saves no memory** (the codes sit next to the float vectors and are rebuilt
+after a restart). Works on an existing store; remove it to go back.
+
+```yaml
+dakera:
+  features:
+    rabitq: {enabled: true, bits: "4"}
+```
+
+### Model store, mirrors, proxies and offline
+
+See "Models, air-gapped installs" below: `dakera.models.*`, `features.prePull`, and `extraEnv` for `HF_ENDPOINT` (a Hub mirror),
+`HTTPS_PROXY` / `NO_PROXY` (`http://` or `socks5h://`, never `https://`), `HF_HUB_OFFLINE=1`. `dakera models list / pull / prune` run
+in the pod (`kubectl exec deploy/<release>-dakera -- dakera models list`).
+
+
+### What the chart does for you when a feature is on
 
 - Renders the feature's variables into the ConfigMap (every name is one the server reads), so the models
   init container and the server see the same configuration. Empty values are left out: the server's default applies.
@@ -203,7 +307,7 @@ helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.12.0 
   limits (the measured configuration); `features.multimodal.resources=null` keeps `dakera.resources`. The other features
   have no measured resource figure: size from the guide, and measure on your data.
 
-**Before you switch one on.**
+### Before you switch one on
 
 - **Multilingual, late interaction and vision change the embedding model or the lane.** The store records its model and a
   pod with another one exits at startup (the log names both). Use a fresh store, or migrate: acknowledge the change for ONE
