@@ -4,6 +4,52 @@ entries:
   - annotations:
       artifacthub.io/changes: |
         - kind: changed
+          description: Dakera server 0.12.0 (chart 0.12.0). v0.11 lives on the release/0.11 branch and chart versions 0.11.x
+        - kind: changed
+          description: Probes read /health/live (liveness + startup) and /health/ready (readiness); the port answers while models load
+        - kind: added
+          description: DAKERA_CLUSTER_SECRET through a Secret (dakera.cluster), model cache volume and pre-pull (dakera.models), fsGroup, extraEnv, optional rollback Job (dakera downgrade)
+        - kind: added
+          description: Opt-in v0.12 features (dakera.features) - multilingual, multimodal, vision, records, late interaction, RaBitQ - with the model cache, models pre-pull and resources wired, plus a PrometheusRule and a Grafana dashboard
+        - kind: removed
+          description: DAKERA_L2_CACHE_PATH (v0.12 derives every path from DAKERA_STORAGE_PATH)
+        - kind: fixed
+          description: The built-in MinIO is now actually deployed when minio.enabled=true, creates the server's bucket, and uses cgr.dev/chainguard/minio (minio/minio is no longer on Docker Hub)
+        - kind: changed
+          description: mcp.enabled defaults to false (dakera-mcp is stdio-only and crash-loops as a pod); its Deployment now sets DAKERA_API_URL
+      artifacthub.io/images: |
+        - name: dakera
+          image: ghcr.io/dakera-ai/dakera:0.12.0
+      artifacthub.io/official: "true"
+      artifacthub.io/signKey: |
+        fingerprint: keyless
+        url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
+    apiVersion: v2
+    appVersion: 0.12.0
+    created: "2026-10-01T14:39:28.937409102Z"
+    description: Dakera — AI agent memory platform
+    digest: aa4e31720c06232a2a93ffd3eab6ef631b02682e6718a3b37f9a01043c366d7c
+    home: https://github.com/dakera-ai/dakera-helm
+    icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo.png
+    keywords:
+    - agent-memory
+    - ai-memory
+    - ai
+    - memory
+    - mcp
+    maintainers:
+    - name: Dakera AI
+      url: https://github.com/dakera-ai
+    name: dakera
+    sources:
+    - https://github.com/dakera-ai/dakera
+    type: application
+    urls:
+    - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.12.0/dakera-0.12.0.tgz
+    version: 0.12.0
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: changed
           description: Bump Dakera server to 0.11.107 (watchdog-cleanup + OOM fixes)
         - kind: added
           description: Automated appVersion sync workflow — chart now tracks server releases automatically
@@ -207,4 +253,4 @@ entries:
     urls:
     - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.55/dakera-0.11.55.tgz
     version: 0.11.55
-generated: "2026-09-03T08:34:04.214947565Z"
+generated: "2026-10-01T14:39:28.937444429Z"
