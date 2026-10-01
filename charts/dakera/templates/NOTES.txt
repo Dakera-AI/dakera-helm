@@ -29,7 +29,7 @@ Dakera has been deployed!
   multilingual      bge-m3, full-text language "{{ .Values.dakera.features.multilingual.fulltextLanguage }}", query language "{{ .Values.dakera.features.multilingual.queryLang }}"
 {{- end }}
 {{- if .Values.dakera.features.multimodal.enabled }}
-  multimodal        attachments + speech to text (WAV; Whisper model via DAKERA_WHISPER_MODEL, default whisper-tiny.en)
+  multimodal        attachments + speech to text (WAV; Whisper model via DAKERA_WHISPER_MODEL, default whisper-base)
 {{- end }}
 {{- if .Values.dakera.features.vision.enabled }}
   vision            image / page indexing + visual recall (a dedicated store)

@@ -168,7 +168,7 @@ variables, constraints, sizing and verification per feature, is
 | Feature | Values | Example file | Costs | Constraints | Verify (`GET /v1/capabilities`) |
 |---|---|---|---|---|---|
 | **Multilingual** (bge-m3, per-language full-text, CJK bigrams, query languages, per-request `lang`) | `features.multilingual.*` (`fulltextLanguage`, `cjkBigrams`, `queryLang`, `maxSeqLength`) | `values-multilingual.yaml` | bge-m3 ~570 MB (+ ORT copy), CPU ONNX only, truncation 2048 tokens | **Fresh store**; `config.tiered: "0"`; not with late interaction / vision; one-way for v0.11 | `default_model` = `bge-m3` |
-| **Attachments + speech to text** (Whisper, five models) | `features.multimodal.*` (`attachmentMaxBytes`, `memHighWaterFraction`, `resources`) | `values-multimodal.yaml` | whisper-tiny.en ~151 MB (others: see the model table); 8Gi / 4 cores (the measured configuration: 530 MiB anonymous with every model, +1.9 GiB image peak) | Any store; WAV only (English by default, multilingual models are a choice); media jobs wait up to 10 s for memory, then `503` + `Retry-After` | `attachments.enabled` |
+| **Attachments + speech to text** (Whisper, five models) | `features.multimodal.*` (`attachmentMaxBytes`, `memHighWaterFraction`, `resources`) | `values-multimodal.yaml` | see the model table (whisper-tiny.en ~151 MB); 8Gi / 4 cores (the measured configuration: 530 MiB anonymous with every model, +1.9 GiB image peak) | Any store; WAV only (multilingual by default, language auto-detected); media jobs wait up to 10 s for memory, then `503` + `Retry-After` | `attachments.enabled` |
 | **Image / page indexing, visual recall** (colmodernvbert) | `features.vision.*` (`resources`) | `values-vision.yaml` | ~966 MB (+ ORT copy), conversion reserves ~1 GB, ~10.7 s per page on CPU, one page at a time | **A dedicated store: its own release** (own MinIO / bucket and volume); `config.tiered: "0"`; PNG only; not with the text models; one-way for v0.11 | `vision.enabled`, `scoring.late_interaction.lane` = `visual` |
 | **Multi-vector records** | `features.records.*` (`maxVectors`, `maxBytes`) | `values-records.yaml` | extras stored beside the primary vector; default limits 4096 vectors / 8 MiB per record | Any store; at most 8 extra representations per record | `records.enabled` |
 | **Late interaction** (colbert-small, MaxSim) | `features.lateInteraction.enabled` | `values-late-interaction.yaml` | colbert-small ~34 MB; steady recall p50 0.10 s at 1k, 0.23 s at 10k memories | **Fresh store**; `config.tiered: "0"` (`501` under `DAKERA_TIERED=1`); not with multilingual / vision; one-way for v0.11 | `scoring.late_interaction.enabled`, `.model_supported` |
@@ -210,14 +210,15 @@ Files stored per agent and referenced from memories (`attachment_ref`, counted b
 transcription job that turns a WAV recording into a memory. Without it the routes answer
 `501 FEATURE_DISABLED`. Works on an existing store.
 
-The speech-to-text model is `DAKERA_WHISPER_MODEL` (default `whisper-tiny.en`), set through `dakera.extraEnv`:
+The speech-to-text model is `DAKERA_WHISPER_MODEL` (default `whisper-base`), set through `dakera.extraEnv`. **Behaviour change on upgrade:** the default speech model is `whisper-base` (multilingual, language auto-detected), not English-only `whisper-tiny.en`. A deployment that enables `features.multimodal` and sets no `DAKERA_WHISPER_MODEL` now transcribes with `whisper-base`; set `DAKERA_WHISPER_MODEL=whisper-tiny.en` through `dakera.extraEnv` to keep the lightest English model.
+
 
 | Model | Languages | Role |
 |---|---|---|
-| `whisper-tiny.en` | English | The default, unchanged (39M parameters) |
-| `whisper-base.en` | English | Better accuracy, still light (74M) |
-| `whisper-tiny` | Multilingual (about 99 languages), language auto-detected | The smallest multilingual model (39M) |
-| `whisper-base` | Multilingual, language auto-detected | The recommended multilingual choice (74M) |
+| `whisper-base` | Multilingual (about 99 languages), language auto-detected | The default; the recommended choice (74M parameters) |
+| `whisper-tiny.en` | English | The lightest English model (39M) |
+| `whisper-base.en` | English | Better English (74M) |
+| `whisper-tiny` | Multilingual, language auto-detected | The lightest multilingual model (39M) |
 | `whisper-small` | Multilingual, language auto-detected | The quality option (244M) |
 
 Multilingual models detect the spoken language themselves and record it on the stored memory as its `lang`, so full-text
@@ -233,8 +234,8 @@ dakera:
       enabled: true
       attachmentMaxBytes: 26214400   # the default, 25 MiB; DAKERA_MAX_BODY_SIZE (dakera.config.maxBodySize) also applies
   extraEnv:
-    - name: DAKERA_WHISPER_MODEL     # optional; default whisper-tiny.en
-      value: whisper-base            # whisper-tiny.en | whisper-base.en | whisper-tiny | whisper-base | whisper-small
+    - name: DAKERA_WHISPER_MODEL     # optional; default whisper-base
+      value: whisper-tiny.en         # whisper-base | whisper-tiny.en | whisper-base.en | whisper-tiny | whisper-small
 ```
 
 Every media job reserves its estimated peak memory first (limit x 0.85), waits up to 10 s, then answers `503` +
