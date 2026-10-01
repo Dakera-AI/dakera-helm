@@ -1,0 +1,10 @@
+# Multilingual search: bge-m3 + per-language full-text + CJK bigrams + query routing.
+# FRESH STORE ONLY (the store records its embedding model). helm install dakera ./charts/dakera -f this-file
+dakera:
+  config:
+    tiered: "0"            # the tiered embedding engine pins bge-large
+  features:
+    multilingual:
+      enabled: true
+      fulltextLanguage: multilingual   # or de, french, pt-BR, ...
+      queryLang: auto

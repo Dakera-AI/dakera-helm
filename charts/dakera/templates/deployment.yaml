@@ -42,9 +42,15 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.dakera.models.pull }}
+      {{- $pull := .Values.dakera.models.pull | default list }}
+      {{- if and (not $pull) (eq (include "dakera.featuresNeedModels" .) "true") .Values.dakera.features.prePull }}
+      {{- $pull = list "configured" }}
+      {{- end }}
+      {{- with $pull }}
       # Models beyond the image's, on disk before the server starts: downloaded,
-      # verified and converted into the model cache.
+      # verified and converted into the model cache. With a v0.12 feature that needs
+      # models enabled and models.pull empty, `configured` is pulled (what the
+      # environment of the enabled features loads).
       initContainers:
         - name: models
           image: "{{ $.Values.dakera.image.repository }}:{{ $.Values.dakera.image.tag | default $.Chart.AppVersion }}"
@@ -135,7 +141,7 @@ spec:
             capabilities:
               drop: [ALL]
           resources:
-            {{- toYaml .Values.dakera.resources | nindent 12 }}
+            {{- include "dakera.serverResources" . | nindent 12 }}
           volumeMounts:
             {{- if .Values.dakera.persistence.enabled }}
             - name: data
@@ -153,7 +159,7 @@ spec:
             claimName: {{ include "dakera.fullname" . }}-rocksdb
         {{- end }}
         - name: models
-          {{- if .Values.dakera.models.persistence.enabled }}
+          {{- if eq (include "dakera.modelsPersist" .) "true" }}
           persistentVolumeClaim:
             claimName: {{ include "dakera.fullname" . }}-models
           {{- else }}
@@ -183,7 +189,7 @@ spec:
       storage: {{ .Values.dakera.persistence.size }}
 {{- end }}
 ---
-{{- if .Values.dakera.models.persistence.enabled }}
+{{- if eq (include "dakera.modelsPersist" .) "true" }}
 # The model cache: models the image does not ship, downloaded (and converted)
 # once instead of at every pod start.
 apiVersion: v1

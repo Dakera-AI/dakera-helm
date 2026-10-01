@@ -1,0 +1,15 @@
+# Every combinable feature at once: multilingual + multimodal + records + rabitq. FRESH STORE ONLY.
+# (late interaction and vision are exclusive with multilingual.)
+dakera:
+  config:
+    tiered: "0"
+  features:
+    multilingual:
+      enabled: true
+      cjkBigrams: "true"
+    multimodal:
+      enabled: true
+    records:
+      enabled: true
+    rabitq:
+      enabled: true

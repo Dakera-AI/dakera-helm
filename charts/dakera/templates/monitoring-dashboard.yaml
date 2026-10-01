@@ -1,0 +1,16 @@
+{{- if .Values.monitoring.grafanaDashboard.enabled }}
+# The server's v0.12 "Dakera Overview" dashboard (files/dakera-overview.json, copied from the
+# server repository) for Grafana's dashboard sidecar: it loads ConfigMaps carrying the label
+# below. Every panel reads a metric the v0.12 server emits.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dakera.fullname" . }}-dashboard-overview
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dakera.labels" . | nindent 4 }}
+    {{ .Values.monitoring.grafanaDashboard.label }}: {{ .Values.monitoring.grafanaDashboard.labelValue | quote }}
+data:
+  dakera-overview.json: |-
+    {{- .Files.Get "files/dakera-overview.json" | nindent 4 }}
+{{- end }}

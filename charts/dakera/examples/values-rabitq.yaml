@@ -1,0 +1,6 @@
+# RaBitQ search mode: a latency option (no memory saving). Works on an existing store.
+dakera:
+  features:
+    rabitq:
+      enabled: true
+      bits: "4"

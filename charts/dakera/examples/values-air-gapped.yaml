@@ -1,0 +1,19 @@
+# Models behind a mirror / proxy, or none at all. Combine with a feature file.
+# Air-gapped: seed the model cache volume ahead (docs: dakera models pull --dir), then keep
+# HF_HUB_OFFLINE=1 so a missing file fails at once, naming it. Remove HF_HUB_OFFLINE and set
+# HF_ENDPOINT / the proxy variables for a mirror or a proxy (http:// or socks5h://, never https://).
+dakera:
+  readOnlyRootFilesystem: true      # the chart mounts the model cache and /tmp
+  models:
+    persistence:
+      enabled: true
+      size: 10Gi
+  extraEnv:
+    - name: HF_HUB_OFFLINE
+      value: "1"
+    # - name: HF_ENDPOINT
+    #   value: https://hf-mirror.example.internal
+    # - name: HTTPS_PROXY
+    #   value: http://proxy.example.internal:3128
+    # - name: NO_PROXY
+    #   value: 127.0.0.1,localhost,.svc,.cluster.local
