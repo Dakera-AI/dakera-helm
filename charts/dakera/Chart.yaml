@@ -2,8 +2,8 @@ apiVersion: v2
 name: dakera
 description: Dakera — AI agent memory platform
 type: application
-version: 0.11.107
-appVersion: "0.11.107"
+version: 0.12.0
+appVersion: "0.12.0"
 keywords:
   - agent-memory
   - ai-memory
@@ -20,13 +20,19 @@ icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo
 annotations:
   artifacthub.io/images: |
     - name: dakera
-      image: ghcr.io/dakera-ai/dakera:latest
+      image: ghcr.io/dakera-ai/dakera:0.12.0
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: Bump Dakera server to 0.11.107 (watchdog-cleanup + OOM fixes)
+      description: Dakera server 0.12.0 (chart 0.12.0). v0.11 lives on the release/0.11 branch and chart versions 0.11.x
+    - kind: changed
+      description: Probes read /health/live (liveness + startup) and /health/ready (readiness); the port answers while models load
     - kind: added
-      description: Automated appVersion sync workflow — chart now tracks server releases automatically
+      description: DAKERA_CLUSTER_SECRET through a Secret (dakera.cluster), model cache volume and pre-pull (dakera.models), fsGroup, extraEnv, optional rollback Job (dakera downgrade)
+    - kind: removed
+      description: DAKERA_L2_CACHE_PATH (v0.12 derives every path from DAKERA_STORAGE_PATH)
+    - kind: fixed
+      description: The built-in MinIO is now actually deployed when minio.enabled=true
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub

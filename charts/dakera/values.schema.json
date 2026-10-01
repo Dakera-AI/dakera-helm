@@ -26,12 +26,14 @@
             "host": {"type": "string", "description": "Bind address"},
             "port": {"type": "integer", "description": "HTTP port"},
             "grpcPort": {"type": "integer", "description": "gRPC port"},
-            "storage": {"type": "string", "enum": ["s3", "local"], "description": "Storage backend"},
+            "storage": {"type": "string", "enum": ["memory", "filesystem", "s3"], "description": "Storage backend (DAKERA_STORAGE)"},
             "s3Bucket": {"type": "string", "description": "S3 bucket name"},
             "s3Region": {"type": "string", "description": "S3 region"},
             "s3Endpoint": {"type": "string", "description": "Custom S3 endpoint (for MinIO or external providers)"},
             "l1CacheSize": {"type": "string", "description": "L1 in-memory cache size in bytes"},
-            "l2CachePath": {"type": "string", "description": "L2 RocksDB cache path"},
+            "dataRoot": {"type": "string", "description": "Data root (DAKERA_STORAGE_PATH); every local path derives from it and the persistence volume is mounted here"},
+            "tiered": {"type": "string", "description": "DAKERA_TIERED: the tiered embedding engine (not tiered storage)"},
+            "searchMode": {"type": "string", "description": "DAKERA_SEARCH_MODE"},
             "tieredStorage": {"type": "boolean", "description": "Enable tiered storage (hot/warm/cold)"},
             "hotToWarmSecs": {"type": "integer", "description": "Seconds before hot memory moves to warm tier"},
             "warmToColdSecs": {"type": "integer", "description": "Seconds before warm memory moves to cold tier"},
@@ -42,9 +44,42 @@
             "rustLog": {"type": "string", "description": "Rust log level (e.g. info, debug, warn)"}
           }
         },
+        "cluster": {
+          "type": "object",
+          "description": "Cluster mode secret (DAKERA_CLUSTER_SECRET, at least 16 characters, identical on every node)",
+          "properties": {
+            "secret": {"type": "string", "description": "Chart-managed secret value, stored in <release>-secrets"},
+            "existingSecret": {
+              "type": "object",
+              "properties": {
+                "name": {"type": "string", "description": "Name of a Secret you manage"},
+                "key": {"type": "string", "description": "Key in that Secret"}
+              }
+            }
+          }
+        },
+        "extraEnv": {"type": "array", "description": "Extra environment variables for the Dakera container (Kubernetes EnvVar list)", "items": {"type": "object"}},
+        "models": {
+          "type": "object",
+          "description": "Model cache and pre-pull",
+          "properties": {
+            "pull": {"type": "array", "items": {"type": "string"}, "description": "Models pulled by an init container (dakera models pull); `configured` = the configured environment"},
+            "persistence": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "size": {"type": "string"},
+                "storageClass": {"type": "string"},
+                "accessMode": {"type": "string", "enum": ["ReadWriteOnce", "ReadWriteMany", "ReadWriteOncePod"]}
+              }
+            }
+          }
+        },
+        "podSecurityContext": {"type": "object", "description": "Pod security context (fsGroup 1000 by default)"},
+        "readOnlyRootFilesystem": {"type": "boolean", "description": "Read-only root filesystem for the server container"},
         "persistence": {
           "type": "object",
-          "description": "Persistent storage for RocksDB L2 cache",
+          "description": "Persistent volume for the data root",
           "properties": {
             "enabled": {"type": "boolean"},
             "size": {"type": "string", "description": "PVC size (e.g. 20Gi)"},
@@ -93,6 +128,15 @@
         }
       },
       "required": []
+    },
+    "rollback": {
+      "type": "object",
+      "description": "Optional one-off Job that runs `dakera downgrade` (rollback to v0.11.108)",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"type": "string", "description": "Image for the Job; default: the server image"},
+        "ttlSecondsAfterFinished": {"type": "integer"}
+      }
     },
     "dashboard": {
       "type": "object",

@@ -63,3 +63,23 @@ MinIO selector labels
 app.kubernetes.io/name: {{ include "dakera.name" . }}-minio
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
+
+{{/*
+DAKERA_CLUSTER_SECRET from a Secret the operator manages (cluster.existingSecret).
+The chart-managed variant (cluster.secret) is a key of <fullname>-secrets, which
+the server container loads with envFrom. Renders nothing when neither is set.
+*/}}
+{{- define "dakera.clusterSecretEnv" -}}
+{{- if and .Values.dakera.cluster.secret .Values.dakera.cluster.existingSecret.name }}
+{{- fail "set only one of dakera.cluster.secret and dakera.cluster.existingSecret.name" }}
+{{- end }}
+{{- with .Values.dakera.cluster.existingSecret }}
+{{- if .name }}
+- name: DAKERA_CLUSTER_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ .name | quote }}
+      key: {{ .key | default "DAKERA_CLUSTER_SECRET" | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

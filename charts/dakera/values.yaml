@@ -6,10 +6,12 @@
 #   helm install dakera ./charts/dakera --set dakera.replicaCount=3
 
 # ---- Dakera Server ----------------------------------------------------------
+# Chart 0.12.0 deploys Dakera server v0.12.0. For v0.11 use the release/0.11
+# branch or a 0.11.x chart version (see README, "Versions").
 dakera:
   image:
     repository: ghcr.io/dakera-ai/dakera
-    tag: "0.11.101"
+    tag: ""  # defaults to the chart appVersion
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -18,16 +20,28 @@ dakera:
     host: "0.0.0.0"
     port: 3000
     grpcPort: 50051
-    storage: s3
+    storage: s3  # memory | filesystem | s3
     s3Bucket: dakera
     s3Region: us-east-1
+    # External S3 (only used when minio.enabled=false); with the built-in MinIO
+    # the endpoint is the chart's own MinIO service.
+    # s3Endpoint: https://s3.amazonaws.com
+    # The data root (DAKERA_STORAGE_PATH). Every local path derives from it —
+    # write-ahead log, RocksDB hot tier, warm tier, knowledge graph, filesystem
+    # backend — and the persistence volume below is mounted exactly here, so all
+    # of it lands on the PVC. Keep it equal to the image's root (/data) unless
+    # you also change where the volume should go.
+    dataRoot: /data
+    # Tiered-storage settings: no effect unless tieredStorage is true.
     l1CacheSize: "1073741824"  # 1 GB
-    l2CachePath: /data/rocksdb
     tieredStorage: true
     hotToWarmSecs: 3600
     warmToColdSecs: 86400
     autoTier: true
     tierCheckIntervalSecs: 300
+    # DAKERA_TIERED: the tiered EMBEDDING engine (always embeds with the default
+    # model and ignores DAKERA_MODEL). Not the same as tieredStorage. Must be the
+    # same on every node that shares a store.
     tiered: "1"
     searchMode: hybrid
     maxBodySize: "524288000"  # 500 MB
@@ -37,10 +51,85 @@ dakera:
   # Root API key — REQUIRED. Set via --set or external secret.
   # rootApiKey: ""
 
+  # Cluster mode (DAKERA_CLUSTER_MODE=true, set through extraEnv) needs
+  # DAKERA_CLUSTER_SECRET: at least 16 characters, the same on every node. It is
+  # kept in a Secret, never in the ConfigMap. Give it either way:
+  #   secret:        the chart stores it in <release>-secrets (key DAKERA_CLUSTER_SECRET)
+  #   existingSecret: read it from a Secret you manage (name + key)
+  # Leave both empty for a standalone server. During a rolling v0.11 -> v0.12
+  # cluster upgrade leave it unset until every node runs v0.12 (UPGRADE.md,
+  # "Cluster"). Also set a stable DAKERA_CLUSTER_NODE_ID per node.
+  cluster:
+    secret: ""
+    existingSecret:
+      name: ""
+      key: DAKERA_CLUSTER_SECRET
+
+  # Extra environment variables for the Dakera container, appended AFTER the ones
+  # the chart sets from `config` above. Standard Kubernetes EnvVar list: each item
+  # is {name, value} or {name, valueFrom}. Do not repeat a name the chart already
+  # sets (DAKERA_HOST/PORT/GRPC_PORT/STORAGE/STORAGE_PATH/S3_*/AUTH_ENABLED/
+  # TIERED*/SEARCH_MODE/..., RUST_LOG). DAKERA_DATA_DIR is an alias of
+  # DAKERA_STORAGE_PATH: do not set it. Values must be strings.
+  #
+  #   extraEnv:
+  #     - name: DAKERA_MODEL              # embedding model (see the model guard note below)
+  #       value: bge-m3
+  #     - name: DAKERA_ENCRYPTION_KEY
+  #       valueFrom:
+  #         secretKeyRef: {name: my-dakera-secrets, key: encryptionKey}
+  #     - name: DAKERA_CLUSTER_MODE
+  #       value: "true"
+  #
+  # Embedding-model guard: the store records the model that embedded it, and a pod
+  # whose effective model differs exits at startup. To switch models on an
+  # existing store, set DAKERA_ALLOW_MODEL_CHANGE=1 for ONE rollout, re-embed with
+  # POST /admin/namespaces/migrate-dimensions, then remove it again.
+  extraEnv: []
+
   persistence:
     enabled: true
     size: 20Gi
     storageClass: ""
+
+  # Models. The image ships bge-large and the reranker in its own model store
+  # (/usr/local/share/dakera/models): they load in seconds with no network and
+  # need nothing below. Any other model (DAKERA_MODEL=bge-m3 / colbert-small,
+  # whisper, the vision model, GLiNER) is downloaded into the model cache
+  # (/app/models) on first use.
+  models:
+    # Pulled by an init container (`dakera models pull`) before the server
+    # starts. Model names (`dakera models list`), or `configured`: what the
+    # environment above configures (extraEnv included).
+    #   pull: [configured]
+    #   pull: [bge-m3, whisper]
+    pull: []
+    # Keep the model cache on a volume so a restarted or rescheduled pod does
+    # not download again. Off: the cache is an emptyDir. Air-gapped: seed this
+    # volume ahead (`dakera models pull`) from a host that can reach the Hub.
+    # ReadWriteMany shares one cache between replicas; ReadWriteOnce needs one.
+    persistence:
+      enabled: false
+      size: 10Gi
+      storageClass: ""
+      accessMode: ReadWriteOnce
+
+  # The image runs as uid/gid 1000 (`dakera`). fsGroup gives that group the
+  # volumes the chart mounts (data PVC, model cache, emptyDirs) so a provisioner
+  # whose volume root is root:root 0755 does not leave the server unable to write
+  # (Init:CrashLoopBackOff on EACCES). OnRootMismatch avoids a recursive walk of
+  # a large volume at every start.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+
+  # Root filesystem read-only. Everything the server writes is on a volume (the
+  # data root, the model cache, /tmp); turn persistence off only together with
+  # this off.
+  readOnlyRootFilesystem: false
 
   resources:
     requests:
@@ -50,8 +139,11 @@ dakera:
       cpu: "2"
       memory: 4Gi
 
+  # A server locks its data root while it runs (one server per data root), so
+  # the chart does not scale one release horizontally: autoscaling is off by
+  # default. Enable it only with persistence.enabled=false and an external S3.
   autoscaling:
-    enabled: true
+    enabled: false
     minReplicas: 1
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
@@ -61,6 +153,20 @@ dakera:
     type: ClusterIP
     httpPort: 3000
     grpcPort: 50051
+
+# ---- Rollback to v0.11 -------------------------------------------------------
+# `dakera downgrade` makes the data v0.11.108's again. It is a one-off Job that
+# must run AFTER the server has stopped. It is not rendered unless enabled; see
+# README, "Rolling back to v0.11":
+#   kubectl scale deploy/<fullname> --replicas=0
+#   helm template <release> ./charts/dakera <your values> \
+#     --set rollback.enabled=true --show-only templates/rollback-job.yaml \
+#     | kubectl apply -f -
+rollback:
+  enabled: false
+  # Image that runs `downgrade`: the v0.12 image (default: the server's).
+  image: ""
+  ttlSecondsAfterFinished: 86400
 
 # ---- Dakera Dashboard -------------------------------------------------------
 dashboard:
@@ -114,24 +220,25 @@ minio:
   enabled: true
   image:
     repository: minio/minio
-    tag: latest
+    tag: RELEASE.2025-04-08T15-41-24Z
     pullPolicy: IfNotPresent
 
   # Credentials — override via --set or external secret
-  rootUser: minioadmin
+  rootUser: dakera-minio  # override with a non-default username to reduce attack surface
   rootPassword: ""  # REQUIRED — set before deploying
 
   persistence:
     size: 50Gi
     storageClass: ""
 
+  # MinIO needs >=4GB RAM under bench-load concurrency (DAK-3971)
   resources:
     requests:
-      cpu: 250m
-      memory: 256Mi
-    limits:
-      cpu: "1"
+      cpu: 500m
       memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
 
 # Use external S3 instead of MinIO:
 # minio:
