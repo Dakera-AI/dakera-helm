@@ -3,7 +3,7 @@ Dakera has been deployed!
 == Services ==
   Dakera API:
     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "dakera.fullname" . }} 3000:3000
-    curl http://localhost:3000/health
+    curl http://localhost:3000/health/ready   # 503 while models load, then 200
 
 {{- if .Values.dashboard.enabled }}
   Dashboard:
@@ -32,6 +32,11 @@ Dakera has been deployed!
 {{- end }}
 
   Metrics endpoint: http://dakera:3000/metrics (Prometheus scrape format)
-  Health endpoint:  http://dakera:3000/health
+  Health endpoints: /health/live (liveness), /health/ready (readiness), /health (detail,
+                    including config_warnings)
 
   Docs: https://github.com/dakera-ai/dakera-docs
+
+
+  Upgrading from chart 0.11.x? Read charts/dakera/CHANGELOG.md first.
+  Rolling back to v0.11: see the README, "Rolling back to v0.11".

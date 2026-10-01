@@ -1,0 +1,84 @@
+{{- if .Values.rollback.enabled }}
+# One-off rollback to v0.11.108: `dakera downgrade` makes the data v0.11.108's
+# again. Run it AFTER the server has stopped (scale the Deployment to 0 first):
+# it refuses (exit 78, nothing changed) while a server runs on the data. Same
+# environment and volumes as the server. Not part of a normal install; see the
+# README, "Rolling back to v0.11". Read the JSON report on stdout:
+#   kubectl logs job/<fullname>-downgrade
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "dakera.fullname" . }}-downgrade
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dakera.labels" . | nindent 4 }}
+    app.kubernetes.io/component: downgrade
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: {{ .Values.rollback.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "dakera.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: downgrade
+    spec:
+      restartPolicy: Never
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dakera.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: downgrade
+          image: "{{ .Values.rollback.image | default (printf "%s:%s" .Values.dakera.image.repository (.Values.dakera.image.tag | default .Chart.AppVersion)) }}"
+          imagePullPolicy: {{ .Values.dakera.image.pullPolicy }}
+          command: ["dakera"]
+          args: ["downgrade"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "dakera.fullname" . }}-config
+            - secretRef:
+                name: {{ include "dakera.fullname" . }}-secrets
+          {{- if or .Values.dakera.cluster.existingSecret.name .Values.dakera.extraEnv }}
+          env:
+            {{- include "dakera.clusterSecretEnv" . | nindent 12 }}
+            {{- with .Values.dakera.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: {{ .Values.dakera.readOnlyRootFilesystem }}
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            {{- if .Values.dakera.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.dakera.config.dataRoot | quote }}
+            {{- end }}
+            - name: models
+              mountPath: /app/models
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if .Values.dakera.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "dakera.fullname" . }}-rocksdb
+        {{- end }}
+        - name: models
+          {{- if .Values.dakera.models.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "dakera.fullname" . }}-models
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}

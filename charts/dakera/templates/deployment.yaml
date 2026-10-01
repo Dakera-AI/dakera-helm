@@ -8,6 +8,15 @@ metadata:
     app.kubernetes.io/component: server
 spec:
   replicas: {{ .Values.dakera.replicaCount }}
+  {{- if .Values.dakera.persistence.enabled }}
+  # One server per data root: v0.12 locks the data root while it runs, and the
+  # volume is ReadWriteOnce. A rolling update would start the new pod beside the
+  # old one, which refuses to start on the locked root (and never becomes ready,
+  # so the old one is never stopped). Stop the old pod first.
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  {{- end }}
   selector:
     matchLabels:
       {{- include "dakera.selectorLabels" . | nindent 6 }}
@@ -27,9 +36,52 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # The volumes the server writes (data PVC, model-cache PVC, emptyDirs) are
+      # group-owned by the image's user (uid/gid 1000).
+      {{- with .Values.dakera.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.dakera.models.pull }}
+      # Models beyond the image's, on disk before the server starts: downloaded,
+      # verified and converted into the model cache.
+      initContainers:
+        - name: models
+          image: "{{ $.Values.dakera.image.repository }}:{{ $.Values.dakera.image.tag | default $.Chart.AppVersion }}"
+          imagePullPolicy: {{ $.Values.dakera.image.pullPolicy }}
+          # The binary itself, not the image's entrypoint: the GPU image's
+          # wrapper refuses to run without an NVIDIA GPU.
+          command: ["dakera"]
+          args:
+            - models
+            - pull
+            {{- range . }}
+            - {{ . | quote }}
+            {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "dakera.fullname" $ }}-config
+          {{- with $.Values.dakera.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: {{ $.Values.dakera.readOnlyRootFilesystem }}
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: models
+              mountPath: /app/models
+            - name: tmp
+              mountPath: /tmp
+      {{- end }}
       containers:
         - name: dakera
-          image: "{{ .Values.dakera.image.repository }}:{{ .Values.dakera.image.tag }}"
+          image: "{{ .Values.dakera.image.repository }}:{{ .Values.dakera.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.dakera.image.pullPolicy }}
           ports:
             - name: http
@@ -43,42 +95,79 @@ spec:
                 name: {{ include "dakera.fullname" . }}-config
             - secretRef:
                 name: {{ include "dakera.fullname" . }}-secrets
-          volumeMounts:
-            - name: rocksdb
-              mountPath: {{ .Values.dakera.config.l2CachePath }}
-            - name: cache
-              mountPath: /data/cache
+          {{- if or .Values.dakera.cluster.existingSecret.name .Values.dakera.extraEnv }}
+          env:
+            {{- include "dakera.clusterSecretEnv" . | nindent 12 }}
+            {{- with .Values.dakera.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          # The port binds before the models load and /health/live answers 200
+          # from then on (a model that is not in the image may download for
+          # minutes): liveness never restarts a pod that is downloading. The
+          # startup probe covers the time before the port binds (write-ahead-log
+          # replay, stored state): periodSeconds x failureThreshold = 10 minutes.
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 10
-            failureThreshold: 3
+            periodSeconds: 30
+          # /health answers 200 even while a component is degraded;
+          # /health/ready is 503 until storage answers and the embedding engine
+          # is up.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            failureThreshold: 3
+            periodSeconds: 10
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: {{ .Values.dakera.readOnlyRootFilesystem }}
+            capabilities:
+              drop: [ALL]
           resources:
             {{- toYaml .Values.dakera.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.dakera.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.dakera.config.dataRoot | quote }}
+            {{- end }}
+            # The model cache (HF_HOME): models the image does not ship.
+            - name: models
+              mountPath: /app/models
+            - name: tmp
+              mountPath: /tmp
       volumes:
-        - name: rocksdb
-          {{- if .Values.dakera.persistence.enabled }}
+        {{- if .Values.dakera.persistence.enabled }}
+        - name: data
           persistentVolumeClaim:
             claimName: {{ include "dakera.fullname" . }}-rocksdb
+        {{- end }}
+        - name: models
+          {{- if .Values.dakera.models.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "dakera.fullname" . }}-models
           {{- else }}
           emptyDir: {}
           {{- end }}
-        - name: cache
+        - name: tmp
           emptyDir: {}
 ---
 {{- if .Values.dakera.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  # Name kept from chart 0.11 (-rocksdb) so an in-place helm upgrade keeps using
+  # the same volume; it now holds the whole data root, not only RocksDB.
   name: {{ include "dakera.fullname" . }}-rocksdb
   namespace: {{ .Release.Namespace }}
   labels:
@@ -92,6 +181,27 @@ spec:
   resources:
     requests:
       storage: {{ .Values.dakera.persistence.size }}
+{{- end }}
+---
+{{- if .Values.dakera.models.persistence.enabled }}
+# The model cache: models the image does not ship, downloaded (and converted)
+# once instead of at every pod start.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dakera.fullname" . }}-models
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dakera.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.dakera.models.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.dakera.models.persistence.size }}
+  {{- if .Values.dakera.models.persistence.storageClass }}
+  storageClassName: {{ .Values.dakera.models.persistence.storageClass }}
+  {{- end }}
 {{- end }}
 ---
 {{- if .Values.dashboard.enabled }}
