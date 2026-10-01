@@ -58,6 +58,20 @@ Dakera has been deployed!
     curl http://localhost:3000/v1/capabilities -H "X-API-Key: <key>"
 {{- end }}
 
+{{- if .Release.IsUpgrade }}
+
+== After upgrading from v0.11 ==
+  If this release holds data from v0.11.108, rebuild the full-text indexes once. Until you do,
+  keyword search and keyword-style recall can return nothing. Fresh installs do not need it, and
+  from v0.12.1 Dakera applies it automatically. It rebuilds search indexes only; memories are
+  not touched. Once the pod is Ready:
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "dakera.fullname" . }} 3000:3000
+    curl -X POST http://localhost:3000/admin/fulltext/reindex \
+      -H "x-api-key: <global admin key>" -H "content-type: application/json" \
+      -d '{"rebuild": true}'
+  Check: a keyword search (POST /v1/namespaces/<ns>/fulltext/search) returns hits.
+{{- end }}
+
 == Next Steps ==
 {{- if not .Values.ingress.enabled }}
   To expose Dakera externally, enable the Ingress:
