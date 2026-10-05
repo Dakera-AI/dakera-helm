@@ -6,7 +6,7 @@
 #   helm install dakera ./charts/dakera --set dakera.replicaCount=3
 
 # ---- Dakera Server ----------------------------------------------------------
-# Chart 0.12.0 deploys Dakera server v0.12.0. For v0.11 use the release/0.11
+# Chart 0.12.1 deploys Dakera server v0.12.1. For v0.11 use the release/0.11
 # branch or a 0.11.x chart version (see README, "Versions").
 dakera:
   image:
@@ -56,13 +56,17 @@ dakera:
   # rootApiKey: ""
 
   # Cluster mode (DAKERA_CLUSTER_MODE=true, set through extraEnv) needs
-  # DAKERA_CLUSTER_SECRET: at least 16 characters, the same on every node. It is
-  # kept in a Secret, never in the ConfigMap. Give it either way:
+  # DAKERA_CLUSTER_SECRET: at least 16 characters, the same on every node. From
+  # server 0.12.1 a cluster node without it exits with code 78, upgraded or not,
+  # so the chart refuses to render cluster mode without it. It is kept in a
+  # Secret, never in the ConfigMap. Give it either way:
   #   secret:        the chart stores it in <release>-secrets (key DAKERA_CLUSTER_SECRET)
   #   existingSecret: read it from a Secret you manage (name + key)
-  # Leave both empty for a standalone server. During a rolling v0.11 -> v0.12
-  # cluster upgrade leave it unset until every node runs v0.12 (UPGRADE.md,
-  # "Cluster"). Also set a stable DAKERA_CLUSTER_NODE_ID per node.
+  # One release is one node: give every release the same value (the chart does
+  # not generate one, a generated value would differ per release). Nodes with and
+  # without the secret do not see each other: switch them all in one window
+  # (README, "Cluster mode"). Leave both empty for a standalone
+  # server. Also set a stable DAKERA_CLUSTER_NODE_ID per node.
   cluster:
     secret: ""
     existingSecret:
@@ -77,7 +81,7 @@ dakera:
   # DAKERA_STORAGE_PATH: do not set it. Values must be strings.
   #
   #   extraEnv:
-  #     - name: DAKERA_MODEL              # embedding model (see the model guard note below)
+  #     - name: DAKERA_MODEL              # embedding model (see the model change note below)
   #       value: bge-m3
   #     - name: DAKERA_ENCRYPTION_KEY
   #       valueFrom:
@@ -85,9 +89,13 @@ dakera:
   #     - name: DAKERA_CLUSTER_MODE
   #       value: "true"
   #
-  # Embedding-model guard: the store records the model that embedded it, and a pod
-  # whose effective model differs exits at startup. To switch models on an
-  # existing store, set DAKERA_ALLOW_MODEL_CHANGE=1 for ONE rollout, re-embed with
+  # Embedding model change: the store records the model that embedded it. From
+  # 0.12.1 a pod with another model of the registry starts and re-embeds the store
+  # in the background, one agent namespace at a time, each answered with its own
+  # model until its turn (progress: /health embedding_model_change). Not in the
+  # background (the pod exits at startup, as on 0.12.0) under DAKERA_TIERED=1,
+  # late-interaction scoring, the visual lane, or a recorded model this build does
+  # not know: there, set DAKERA_ALLOW_MODEL_CHANGE=1 for ONE rollout, re-embed with
   # POST /admin/namespaces/migrate-dimensions, then remove it again.
   extraEnv: []
 
@@ -132,10 +140,12 @@ dakera:
   #   * vision is a store of its own: not with multilingual / lateInteraction, and install it
   #     as its own release (its namespaces hold 128-d page vectors, not text embeddings);
   #   * rabitq needs dakera.config.searchMode left at "hybrid".
-  # multilingual, lateInteraction and vision change the embedding model or the lane: a FRESH
-  # store only. To move an existing store, acknowledge the change for ONE rollout with
-  # extraEnv DAKERA_ALLOW_MODEL_CHANGE=1 and re-embed (see the extraEnv note above). They
-  # are one-way for v0.11 (`dakera downgrade` refuses them).
+  # multilingual, lateInteraction and vision change the embedding model or the lane. On an
+  # existing store, multilingual re-embeds it in the background (0.12.1, see the extraEnv
+  # note above). lateInteraction and vision are not re-embedded in the background: a FRESH
+  # store, or acknowledge the change for ONE rollout with extraEnv
+  # DAKERA_ALLOW_MODEL_CHANGE=1 and re-embed. They are one-way for v0.11 (`dakera downgrade`
+  # refuses them).
   features:
     # When a feature that needs a model outside the image is on (multilingual,
     # lateInteraction, multimodal, vision):
@@ -154,9 +164,10 @@ dakera:
     # full-text + CJK bigrams + multilingual query routing. Per request: "lang".
     multilingual:
       enabled: false
-      # BM25 analyzer of NEWLY created namespace indexes (DAKERA_FULLTEXT_LANGUAGE): an ISO
-      # 639-1 code or English name (de, french, pt-BR, ...), or zh/ja/ko/th/none/multilingual
-      # (no stemming). Existing namespaces: POST /admin/fulltext/reindex {"rebuild": true}.
+      # BM25 analyzer (DAKERA_FULLTEXT_LANGUAGE): an ISO 639-1 code or English name (de,
+      # french, pt-BR, ...), or zh/ja/ko/th/none/multilingual (no stemming). From 0.12.1 an
+      # existing index built with another analyzer is re-analysed in the background at the
+      # next start (served as built until then).
       fulltextLanguage: multilingual
       # DAKERA_FULLTEXT_CJK_BIGRAMS: "" follows the language (on unless en); "true" / "false".
       cjkBigrams: ""

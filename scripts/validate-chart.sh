@@ -50,6 +50,22 @@ expect_refusal "rabitq bits without rabitq"              --set dakera.features.r
 expect_refusal "rabitq bits out of range"                --set dakera.features.rabitq.enabled=true --set dakera.features.rabitq.bits=9
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
 expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
+# Server 0.12.1: a cluster node without DAKERA_CLUSTER_SECRET exits with code 78.
+CM=(--set 'dakera.extraEnv[0].name=DAKERA_CLUSTER_MODE' --set-string 'dakera.extraEnv[0].value=true')
+expect_refusal "cluster mode without a secret"           "${CM[@]}"
+expect_refusal "cluster mode (valueFrom) without a secret" --set 'dakera.extraEnv[0].name=DAKERA_CLUSTER_MODE' \
+  --set 'dakera.extraEnv[0].valueFrom.configMapKeyRef.name=x' --set 'dakera.extraEnv[0].valueFrom.configMapKeyRef.key=y'
+expect_refusal "cluster secret of blanks"                --set-string 'dakera.cluster.secret=                x'
+expect_refusal "cluster secret in extraEnv too short"    "${CM[@]}" --set 'dakera.extraEnv[1].name=DAKERA_CLUSTER_SECRET' --set-string 'dakera.extraEnv[1].value=short'
+expect_refusal "cluster secret in extraEnv and cluster"  "${CM[@]}" --set 'dakera.extraEnv[1].name=DAKERA_CLUSTER_SECRET' \
+  --set-string 'dakera.extraEnv[1].value=0123456789abcdef' --set dakera.cluster.secret=0123456789abcdef
+echo "== cluster mode with a secret renders it"
+"$HELM" template r "$CHART" "${REQ[@]}" "${CM[@]}" --set dakera.cluster.secret=0123456789abcdef \
+  | grep -q 'DAKERA_CLUSTER_SECRET: "0123456789abcdef"' || { echo "FAIL: cluster.secret not in the Secret"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" "${CM[@]}" --set dakera.cluster.existingSecret.name=mine \
+  | grep -A3 'name: DAKERA_CLUSTER_SECRET' | grep -q 'name: "mine"' || { echo "FAIL: existingSecret not referenced"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set-string 'dakera.extraEnv[0].value=false' --set 'dakera.extraEnv[0].name=DAKERA_CLUSTER_MODE' > /dev/null \
+  || { echo "FAIL: DAKERA_CLUSTER_MODE=false refused"; fail=1; }
 # The chart's Secret (where dakera.cluster.secret goes) is rendered only with rootApiKey.
 if "$HELM" template r "$CHART" --set minio.rootPassword=ci-lint --set dakera.cluster.secret=0123456789abcdef > /dev/null 2>&1; then
   echo "FAIL: accepted (cluster secret without rootApiKey: it would be dropped)"; fail=1

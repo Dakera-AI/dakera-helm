@@ -45,9 +45,10 @@ Dakera has been deployed!
 {{- end }}
 {{- if or .Values.dakera.features.multilingual.enabled .Values.dakera.features.lateInteraction.enabled .Values.dakera.features.vision.enabled }}
 
-  These change the embedding model or the lane: a FRESH store only. A pod whose model differs
-  from the store's exits at startup (the log names both models); to move an existing store see
-  the README, "Features in v0.12.0".
+  These change the embedding model or the lane. On an existing store, multilingual re-embeds it
+  in the background (progress: /health embedding_model_change); lateInteraction and vision are
+  for a FRESH store: on an existing one the pod exits at startup (the log names both models).
+  See the README, "Features in v0.12.0".
 {{- end }}
 {{- if eq (include "dakera.featuresNeedModels" .) "true" }}
 
@@ -58,18 +59,12 @@ Dakera has been deployed!
     curl http://localhost:3000/v1/capabilities -H "X-API-Key: <key>"
 {{- end }}
 
-{{- if .Release.IsUpgrade }}
+{{- if and .Release.IsUpgrade (eq (include "dakera.clusterMode" .) "true") }}
 
-== After upgrading from v0.11 ==
-  If this release holds data from v0.11.108, rebuild the full-text indexes once. Until you do,
-  keyword search and keyword-style recall can return nothing. Fresh installs do not need it, and
-  from v0.12.1 Dakera applies it automatically. It rebuilds search indexes only; memories are
-  not touched. Once the pod is Ready:
-    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "dakera.fullname" . }} 3000:3000
-    curl -X POST http://localhost:3000/admin/fulltext/reindex \
-      -H "x-api-key: <global admin key>" -H "content-type: application/json" \
-      -d '{"rebuild": true}'
-  Check: a keyword search (POST /v1/namespaces/<ns>/fulltext/search) returns hits.
+== Cluster mode ==
+  From 0.12.1 every node needs the same DAKERA_CLUSTER_SECRET. Nodes with and without it, or
+  with different values, do not see each other: upgrade every node (release) in one window.
+  Check on each node: GET /admin/cluster/status lists the other nodes and the same leader.
 {{- end }}
 
 == Next Steps ==
@@ -88,5 +83,5 @@ Dakera has been deployed!
   Docs: https://github.com/dakera-ai/dakera-docs
 
 
-  Upgrading from chart 0.11.x? Read charts/dakera/CHANGELOG.md first.
+  Upgrading from chart 0.11.x or 0.12.0? Read charts/dakera/CHANGELOG.md first.
   Rolling back to v0.11: see the README, "Rolling back to v0.11".
