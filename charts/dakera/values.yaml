@@ -298,14 +298,21 @@ rollback:
   ttlSecondsAfterFinished: 86400
 
 # ---- Dakera Dashboard -------------------------------------------------------
+# Dashboard 0.4+ signs operators in with their own API key at /login and keeps it in
+# server memory; the chart gives it no key. Sessions live in memory, so keep one replica
+# (or sticky sessions) and serve it behind TLS that forwards X-Forwarded-Proto and Host.
 dashboard:
   enabled: true
   image:
     repository: ghcr.io/dakera-ai/dakera-dashboard
-    tag: "0.3.29"
+    tag: "0.5.0"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
+
+  # Longest a sign-in lasts, in hours (dashboard default 12; 15 minutes to 7 days).
+  # Idle sessions end after 2 hours. Empty: the dashboard's default.
+  sessionTtlHours: ""
 
   resources:
     requests:

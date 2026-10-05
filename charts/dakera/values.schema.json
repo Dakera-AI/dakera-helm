@@ -211,6 +211,7 @@
           }
         },
         "replicaCount": {"type": "integer", "minimum": 1},
+        "sessionTtlHours": {"type": ["string", "integer"], "pattern": "^([0-9]+(\\.[0-9]+)?)?$", "description": "DAKERA_SESSION_TTL_HOURS; empty uses the dashboard default (12)"},
         "resources": {
           "type": "object",
           "properties": {

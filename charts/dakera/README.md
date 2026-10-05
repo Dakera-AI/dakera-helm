@@ -198,7 +198,8 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `dakera.resources.limits.memory` | `4Gi` | Memory limit |
 | `dakera.autoscaling.enabled` | `false` | Enable HPA (one server per data root; see values.yaml) |
 | `dakera.autoscaling.maxReplicas` | `5` | HPA max replicas |
-| `dashboard.enabled` | `true` | Deploy the web dashboard |
+| `dashboard.enabled` | `true` | Deploy the web dashboard (0.5.0). Operators sign in at `/login` with their own API key; the chart gives the dashboard no key. Keep one replica (sessions live in memory) |
+| `dashboard.sessionTtlHours` | `""` | `DAKERA_SESSION_TTL_HOURS`: longest a sign-in lasts (dashboard default 12) |
 | `mcp.enabled` | `false` | dakera-mcp speaks MCP over stdio only: as a pod it exits at once (CrashLoopBackOff, measured with 0.10.11). Run it next to the MCP client |
 | `minio.enabled` | `true` | Deploy built-in MinIO (disable to use external S3) |
 | `minio.persistence.size` | `50Gi` | MinIO PVC size |

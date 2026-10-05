@@ -77,4 +77,15 @@ echo "== built-in MinIO creates the server's bucket"
 "$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.s3Bucket=ci-bucket | grep -q "mb --ignore-existing local/ci-bucket" \
   || { echo "FAIL: MinIO does not create the bucket"; fail=1; }
 
+echo "== the dashboard gets no API key (0.3.x served it to every browser)"
+# Whole render, one document per record (--show-only drops documents of a file that renders several).
+dash=$("$HELM" template r "$CHART" "${REQ[@]}" | awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/')
+if [ -z "$dash" ]; then
+  echo "FAIL: dashboard Deployment not rendered"; fail=1
+elif printf '%s' "$dash" | grep -Eq 'name: "?DAKERA_(ROOT_)?API_KEY'; then
+  echo "FAIL: the dashboard pod is given an API key"; fail=1
+else
+  echo "ok: no key in the dashboard pod"
+fi
+
 [ "$fail" = 0 ] && echo "chart validation passed" || { echo "chart validation FAILED"; exit 1; }
