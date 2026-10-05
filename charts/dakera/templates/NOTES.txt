@@ -8,7 +8,11 @@ Dakera has been deployed!
 {{- if .Values.dashboard.enabled }}
   Dashboard:
     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "dakera.fullname" . }}-dashboard 3002:3000
-    Open: http://localhost:3002
+    Open: http://localhost:3002 and sign in with a Dakera API key (use the lowest scope that suffices).
+{{- if .Release.IsUpgrade }}
+    Chart 0.12.1 replaced Dashboard 0.3.x, which received the root API key and served it to every
+    browser. If the dashboard was reachable by anyone who should not hold that key, rotate dakera.rootApiKey.
+{{- end }}
 {{- end }}
 
 {{- if .Values.mcp.enabled }}

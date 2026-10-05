@@ -23,6 +23,8 @@ annotations:
       image: ghcr.io/dakera-ai/dakera:0.12.1
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
+    - kind: security
+      description: Dashboard 0.3.29 -> 0.5.0. The chart passed the root API key to the dashboard, and 0.3.x wrote it into every served page, so anyone who could open the dashboard held a super_admin key. 0.4+ signs operators in with their own key, kept server-side; the chart no longer gives the dashboard a key. Rotate the root key if the dashboard was reachable by people who should not hold it
     - kind: changed
       description: Dakera server 0.12.1 (chart 0.12.1); the image tag follows appVersion
     - kind: security

@@ -5,6 +5,23 @@ The chart version equals the Dakera server version it deploys. v0.11 lives on th
 
 ## 0.12.1 (Dakera server v0.12.1)
 
+### Security: the dashboard no longer receives the root API key
+
+The chart deployed `dakera-dashboard:0.3.29` (enabled by default) and passed it
+`DAKERA_ROOT_API_KEY` as `DAKERA_API_KEY`. Dashboard 0.3.x writes that key into
+every page it serves, so anyone who could load the dashboard held the root
+(`super_admin`) key (Dakera-AI/dakera-deploy#296). The chart now deploys
+**Dashboard 0.5.0**: operators sign in at `/login` with their own API key, which
+the dashboard keeps in server memory behind an `HttpOnly` cookie, and the chart
+gives the dashboard no key. Probes use `/_session/healthz`; the new optional
+`dashboard.sessionTtlHours` sets `DAKERA_SESSION_TTL_HOURS`.
+
+**What to do:** if the dashboard was reachable by anyone who should not hold the
+root key (an Ingress with `ingress.dashboardHost`, a `LoadBalancer`/`NodePort`
+service, or a shared port-forward), **rotate `dakera.rootApiKey`**. Keep one
+dashboard replica (sessions live in memory) and serve it behind TLS that
+forwards `X-Forwarded-Proto` and `Host`.
+
 ### Upgrade notes (0.12.0 to 0.12.1)
 
 Read the server's

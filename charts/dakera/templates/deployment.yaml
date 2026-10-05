@@ -240,22 +240,23 @@ spec:
             - name: http
               containerPort: 3000
           env:
+            # Dashboard 0.4+ holds no API key: operators sign in with their own key, kept
+            # server-side by the dashboard's session service. Never pass DAKERA_API_KEY here.
             - name: DAKERA_API_UPSTREAM
               value: "http://{{ include "dakera.fullname" . }}:{{ .Values.dakera.config.port }}"
-            - name: DAKERA_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "dakera.fullname" . }}-secrets
-                  key: DAKERA_ROOT_API_KEY
+            {{- with .Values.dashboard.sessionTtlHours }}
+            - name: DAKERA_SESSION_TTL_HOURS
+              value: {{ . | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
-              path: /
+              path: /_session/healthz
               port: http
             initialDelaySeconds: 10
             periodSeconds: 15
           readinessProbe:
             httpGet:
-              path: /
+              path: /_session/healthz
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
