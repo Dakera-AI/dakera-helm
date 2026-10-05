@@ -3,6 +3,74 @@
 The chart version equals the Dakera server version it deploys. v0.11 lives on the
 `release/0.11` branch and in the 0.11.x chart versions (last published: 0.11.107).
 
+## 0.12.1 (Dakera server v0.12.1)
+
+### Upgrade notes (0.12.0 to 0.12.1)
+
+Read the server's
+[UPGRADE.md, "Upgrading from v0.12.0 to v0.12.1"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#upgrading-from-v0120-to-v0121)
+first. Nothing is migrated by hand; the data formats are those of 0.12.0.
+From 0.11.x straight to 0.12.1: the 0.12.0 notes below apply too, except that
+the cluster secret is set during the upgrade, not after it (item 2).
+
+1. **Back up first** (`POST /admin/backups`).
+2. **Clusters need `DAKERA_CLUSTER_SECRET` on every node.** A 0.12.1 node in
+   cluster mode without it exits with code 78, upgraded or not (0.12.0 let an
+   upgraded node start with its node-to-node routes open). Give every release
+   the same value of at least 16 characters (`dakera.cluster.existingSecret`
+   or `dakera.cluster.secret`). Nodes with and without it do not see each
+   other: switch them in one window (README, "Cluster mode"). A cluster that
+   already has the secret upgrades release by release as usual. Single-server
+   releases are not affected.
+3. **Full-text indexes**: nothing to do. 0.12.1 re-analyses indexes still on
+   the v0.11 analyzer in the background at startup. The manual
+   `POST /admin/fulltext/reindex {"rebuild": true}` is only for a server still
+   on 0.12.0.
+4. **Statistics totals change meaning.** Memory totals stop counting sentence
+   sub-memories and drop; session totals count ended sessions and rise
+   (`GET /v1/agents` `memory_count`, `GET /v1/agents/{id}/stats`,
+   `GET /admin/memory-type-stats`, `GET /v1/kpis` `session_count_weekly`).
+   The chart's alert rules and dashboard (identical to the server's v0.12.1
+   files) do not read these fields. Re-base your own dashboards, alerts and
+   reports.
+
+### Changed
+- Chart and `appVersion` 0.12.1; the server image tag follows `appVersion`
+  (`ghcr.io/dakera-ai/dakera:0.12.1`).
+- **Cluster mode without a secret is refused at render time.** With
+  `DAKERA_CLUSTER_MODE` in `dakera.extraEnv` (`1`, `true`, `yes`, `on`, or set
+  with `valueFrom`) and no `dakera.cluster.secret`,
+  `dakera.cluster.existingSecret.name` or `DAKERA_CLUSTER_SECRET` entry in
+  `dakera.extraEnv`, helm fails with a message instead of deploying a pod that
+  exits. The chart does not generate a secret: one release is one node, and a
+  value generated per release would differ between nodes. A `<fullname>-secrets`
+  you created yourself with the key `DAKERA_CLUSTER_SECRET` is used with
+  `dakera.cluster.existingSecret.name=<fullname>-secrets`.
+- `dakera.cluster.secret` must be empty or at least 16 characters in
+  `values.schema.json`; the template checks the length after trimming, as the
+  server does, and also checks a `DAKERA_CLUSTER_SECRET` value in
+  `dakera.extraEnv`. Setting the secret both in `dakera.cluster` and in
+  `dakera.extraEnv` is refused.
+- Changing the embedding model re-embeds the store in the background (server
+  0.12.1): `features.multilingual` works on an existing store without
+  `DAKERA_ALLOW_MODEL_CHANGE`. That flag and
+  `POST /admin/namespaces/migrate-dimensions` remain the way for
+  `lateInteraction`, `vision` and `DAKERA_TIERED=1`. values.yaml, NOTES.txt
+  and the README say so.
+- `features.multilingual.fulltextLanguage` applies to existing indexes too:
+  an index built with another analyzer is re-analysed at the next start.
+- NOTES.txt: the v0.11 full-text rebuild reminder is gone (0.12.1 does it at
+  startup); after an upgrade in cluster mode it prints the secret reminder.
+- README: "Upgrading from chart 0.12.0", the cluster upgrade procedure, and the
+  manual full-text rebuild kept for servers still on 0.12.0.
+
+### Security
+- Server 0.12.1 requires `DAKERA_CLUSTER_SECRET` on every cluster node: on
+  0.12.0 an upgraded node without it ran with open node-to-node routes, and
+  `POST /internal/sync/key/add` let anyone who reached the API port mint a
+  SuperAdmin key. It also carries the 2026-10-04 code audit fixes (server
+  CHANGELOG).
+
 ## 0.12.0 (Dakera server v0.12.0)
 
 ### Upgrade notes (0.11.x to 0.12.0)

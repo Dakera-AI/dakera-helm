@@ -1,4 +1,4 @@
-# Copied verbatim from the server repository (Dakera-AI/dakera, prometheus/alerts/dakera.rules.yml, v0.12.0):
+# Copied verbatim from the server repository (Dakera-AI/dakera, prometheus/alerts/dakera.rules.yml, v0.12.0; unchanged in v0.12.1):
 # every expression reads a metric the v0.12 server emits. Update by copying the file again.
 # =============================================================================
 # Prometheus alert rules for Dakera

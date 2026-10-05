@@ -46,9 +46,9 @@
         },
         "cluster": {
           "type": "object",
-          "description": "Cluster mode secret (DAKERA_CLUSTER_SECRET, at least 16 characters, identical on every node)",
+          "description": "Cluster mode secret (DAKERA_CLUSTER_SECRET, at least 16 characters, identical on every node; required in cluster mode from server 0.12.1)",
           "properties": {
-            "secret": {"type": "string", "description": "Chart-managed secret value, stored in <release>-secrets"},
+            "secret": {"type": "string", "pattern": "^(|.{16,})$", "description": "Chart-managed secret value, stored in <release>-secrets: empty, or at least 16 characters"},
             "existingSecret": {
               "type": "object",
               "properties": {

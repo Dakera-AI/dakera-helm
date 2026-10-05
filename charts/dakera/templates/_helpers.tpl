@@ -70,9 +70,6 @@ The chart-managed variant (cluster.secret) is a key of <fullname>-secrets, which
 the server container loads with envFrom. Renders nothing when neither is set.
 */}}
 {{- define "dakera.clusterSecretEnv" -}}
-{{- if and .Values.dakera.cluster.secret .Values.dakera.cluster.existingSecret.name }}
-{{- fail "set only one of dakera.cluster.secret and dakera.cluster.existingSecret.name" }}
-{{- end }}
 {{- with .Values.dakera.cluster.existingSecret }}
 {{- if .name }}
 - name: DAKERA_CLUSTER_SECRET
@@ -82,6 +79,57 @@ the server container loads with envFrom. Renders nothing when neither is set.
       key: {{ .key | default "DAKERA_CLUSTER_SECRET" | quote }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/*
+"true" when dakera.extraEnv switches cluster mode on: DAKERA_CLUSTER_MODE set to a value the
+server reads as on (1, true, yes, on; any case), or set with valueFrom, which the chart cannot
+read. The last entry wins, as in Kubernetes.
+*/}}
+{{- define "dakera.clusterMode" -}}
+{{- $on := false -}}
+{{- range .Values.dakera.extraEnv -}}
+{{- if eq (toString .name) "DAKERA_CLUSTER_MODE" -}}
+{{- if .valueFrom -}}
+{{- $on = true -}}
+{{- else -}}
+{{- $on = has (lower (trim (toString .value))) (list "1" "true" "yes" "on") -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $on -}}true{{- end -}}
+{{- end }}
+
+{{/*
+Check DAKERA_CLUSTER_SECRET. From server 0.12.1 every cluster node needs it (at least 16
+characters after trimming, the same on every node) or exits with code 78. The chart does not
+generate one: one release is one node, so a secret generated per release would differ from
+node to node and the nodes would not see each other. Rendered, and so evaluated, by
+configmap.yaml.
+*/}}
+{{- define "dakera.cluster.validate" -}}
+{{- $c := .Values.dakera.cluster -}}
+{{- $fromEnv := false -}}
+{{- range .Values.dakera.extraEnv -}}
+{{- if eq (toString .name) "DAKERA_CLUSTER_SECRET" -}}
+{{- $fromEnv = true -}}
+{{- if and (not .valueFrom) (lt (len (trim (toString (.value | default "")))) 16) -}}
+{{- fail "DAKERA_CLUSTER_SECRET in dakera.extraEnv must be at least 16 characters (the server trims it first)" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and $c.secret $c.existingSecret.name -}}
+{{- fail "set only one of dakera.cluster.secret and dakera.cluster.existingSecret.name" -}}
+{{- end -}}
+{{- if and $fromEnv (or $c.secret $c.existingSecret.name) -}}
+{{- fail "DAKERA_CLUSTER_SECRET is set in dakera.extraEnv and in dakera.cluster: set it one way" -}}
+{{- end -}}
+{{- if and $c.secret (lt (len (trim (toString $c.secret))) 16) -}}
+{{- fail "dakera.cluster.secret must be at least 16 characters (DAKERA_CLUSTER_SECRET; the server trims it first)" -}}
+{{- end -}}
+{{- if and (eq (include "dakera.clusterMode" .) "true") (not (or $c.secret $c.existingSecret.name $fromEnv)) -}}
+{{- fail (printf "cluster mode (DAKERA_CLUSTER_MODE in dakera.extraEnv) needs DAKERA_CLUSTER_SECRET: from server 0.12.1 a cluster node without it exits with code 78, upgraded or not. Give every node (every release) the same value of at least 16 characters (openssl rand -hex 32): dakera.cluster.existingSecret (name, key) for a Secret you manage, or dakera.cluster.secret (stored in %s-secrets, needs dakera.rootApiKey). If you created %s-secrets yourself with the key DAKERA_CLUSTER_SECRET, set dakera.cluster.existingSecret.name=%s-secrets. Nodes with and without the secret do not see each other: see the chart README, \"Cluster mode\"" (include "dakera.fullname" .) (include "dakera.fullname" .) (include "dakera.fullname" .)) -}}
+{{- end -}}
 {{- end }}
 
 {{/*

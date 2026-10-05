@@ -20,10 +20,10 @@
 
 | | Dakera server | Chart version | Where |
 |---|---|---|---|
-| **Latest** | **v0.12.0** | **0.12.0** (and later 0.12.x) | `main` (this branch), the Helm repository and the OCI registry |
+| **Latest** | **v0.12.1** | **0.12.1** (and later 0.12.x) | `main` (this branch), the Helm repository and the OCI registry |
 | Previous | v0.11.x (last: v0.11.108) | 0.11.x | the [`release/0.11`](https://github.com/Dakera-AI/dakera-helm/tree/release/0.11) branch |
 
-`main` and the latest chart are **v0.12.0**. The v0.11 chart is kept on the
+`main` and the latest chart are **v0.12.1**. The v0.11 chart is kept on the
 `release/0.11` branch, unchanged, so a v0.11 setup stays findable and working.
 To stay on v0.11, pin the old chart version, for example:
 
@@ -37,7 +37,7 @@ helm install dakera dakera/dakera --version 0.11.107 ...
 set `--set dakera.image.tag=0.11.108` to run the final v0.11 server.
 `helm search repo dakera/dakera --versions` lists every published version. The
 chart version always equals the Dakera server version it deploys. Upgrading from
-v0.11 to v0.12.0: read [CHANGELOG.md](CHANGELOG.md)
+v0.11 or v0.12.0 to v0.12.1: read [CHANGELOG.md](CHANGELOG.md)
 and the server's
 [UPGRADE.md](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md).
 
@@ -58,7 +58,7 @@ Pin a specific version:
 
 ```bash
 helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera \
-  --version 0.12.0 \
+  --version 0.12.1 \
   --namespace dakera --create-namespace \
   --set dakera.rootApiKey=<your-key> \
   --set minio.rootPassword=<your-password>
@@ -85,6 +85,30 @@ helm upgrade dakera dakera/dakera --namespace dakera \
   --set dakera.rootApiKey=<your-key> \
   --set minio.rootPassword=<your-password>
 ```
+
+### Upgrading from chart 0.12.0
+
+Chart 0.12.1 deploys server 0.12.1 (the image tag follows `appVersion`). The stored data, index and
+snapshot formats are those of 0.12.0: nothing is migrated by hand. Take a backup first
+(`POST /admin/backups`). Server
+[UPGRADE.md, "Upgrading from v0.12.0 to v0.12.1"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#upgrading-from-v0120-to-v0121).
+
+- **Single server** (cluster mode off): `helm upgrade` as above. Nothing else.
+- **Cluster mode**: every node needs the same `DAKERA_CLUSTER_SECRET`. A 0.12.1 node without it exits
+  with code 78, upgraded or not, and nodes with and without it do not see each other. Set it on every
+  release and switch them in one window: see "Cluster mode" below.
+- **Full-text indexes** still on the v0.11 analyzer are re-analysed in the background at the first
+  start, while they keep serving. No step (see "Full-text indexes from v0.11" below).
+- **A changed `DAKERA_MODEL`** no longer stops the pod: the store is re-embedded in the background,
+  except under `DAKERA_TIERED=1`, late interaction or vision (see "Before you switch one on").
+- **Statistics totals change meaning.** Memory totals stop counting sentence sub-memories and drop;
+  session totals count ended sessions and rise (`GET /v1/agents` `memory_count`, the old figure is the
+  new `vector_count`; `GET /v1/agents/{id}/stats`; `GET /admin/memory-type-stats`; `GET /v1/kpis`
+  `session_count_weekly`). Storage, recall and quotas are not affected. The chart's alert rules and
+  dashboard read Prometheus metrics, not these fields, and are unchanged. Re-base your own dashboards,
+  alerts and reports built on them (server UPGRADE.md, "API errors and responses").
+
+Check: `/health/ready` answers 200, `GET /v1/agents` lists every agent, and a keyword search returns hits.
 
 ### Upgrading from chart 0.11.x
 
@@ -113,18 +137,20 @@ dakera:
       valueFrom: {secretKeyRef: {name: <your-s3-secret>, key: AWS_SECRET_ACCESS_KEY}}
 ```
 
-### After upgrading data from v0.11: rebuild the full-text indexes
+### Full-text indexes from v0.11
 
-**Required post-upgrade step.** After you upgrade a release that holds data from v0.11.108, rebuild its
-full-text indexes once. Until you do, keyword search and keyword-style recall can return nothing. Fresh
-v0.12.0 installs do not need it. From v0.12.1 (not released yet) Dakera applies it automatically; until
-then, run it yourself.
+**0.12.1 needs no step.** At startup it re-analyses every full-text index built with another analyzer
+than the configured one (an index v0.11 built without stemming, for one), in the background, one
+namespace at a time, while the index keeps serving. Writes made meanwhile are kept and a restart
+resumes. An index that holds documents existing only in the index, or agent memories that cannot be
+opened at that moment, keeps its analyzer (logged). Watch the log for
+`Full-text index re-analysed under the configured analyzer`.
 
-Full-text indexes built by v0.11 are re-analysed under v0.12's text analysis. The rebuild does that once,
-so keyword search and keyword-style recall return results again. It only rebuilds derived search indexes;
-memories are not touched. On a production deployment with about 18,000 memories it took about 18 seconds.
-Wait until the pod is Ready, forward the service and call the endpoint with a key of global `admin` scope
-(the root API key works):
+**Only on server 0.12.0** (chart 0.12.0, or `dakera.image.tag=0.12.0`): after upgrading data from
+v0.11.108, rebuild its full-text indexes once by hand. Until you do, keyword search and keyword-style
+recall can return nothing. It only rebuilds derived search indexes; memories are not touched (about
+18 seconds for 18,000 memories). Wait until the pod is Ready, forward the service and call the endpoint
+with a key of global `admin` scope (the root API key works):
 
 ```bash
 kubectl port-forward -n dakera svc/dakera 3000:3000 &
@@ -134,12 +160,9 @@ curl -X POST http://localhost:3000/admin/fulltext/reindex \
 ```
 
 Adjust the namespace and the service name (`<fullname>`, `dakera` for a release named `dakera`). Omit
-`namespace` from the body to cover every agent memory namespace; add `"namespace": "<ns>"` for one. A
-one-off Job from an image that has `curl`, pointed at `http://<fullname>.<namespace>.svc:3000`, works
-the same way.
-
-Check it: a keyword search (`POST /v1/namespaces/<ns>/fulltext/search` with a common word) returns hits,
-and a short keyword recall returns memories.
+`namespace` from the body to cover every agent memory namespace; add `"namespace": "<ns>"` for one (a
+vector-API namespace needs its own call). Check it: a keyword search
+(`POST /v1/namespaces/<ns>/fulltext/search` with a common word) returns hits.
 
 ---
 
@@ -164,7 +187,7 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `dakera.config.dataRoot` | `/data` | Data root (`DAKERA_STORAGE_PATH`); the persistence volume is mounted here and every local path (WAL, hot/warm tiers, graph, filesystem backend) lives under it |
 | `dakera.config.l1CacheSize` | `1GB` | Tiered-storage hot-tier budget. A unit suffix is bytes; a bare number below 10 million is a vector **count** (the server's default is 100000 vectors) |
 | `dakera.persistence.size` | `20Gi` | PVC size for the data root |
-| `dakera.cluster.secret` / `dakera.cluster.existingSecret.name` | empty | `DAKERA_CLUSTER_SECRET` (cluster mode; at least 16 chars, same on every node), stored in a Secret |
+| `dakera.cluster.secret` / `dakera.cluster.existingSecret.name` | empty | `DAKERA_CLUSTER_SECRET`, stored in a Secret. Required in cluster mode (at least 16 chars, same on every node); see "Cluster mode" |
 | `dakera.extraEnv` | `[]` | Any other `DAKERA_*` setting (Kubernetes EnvVar list), e.g. `DAKERA_MODEL`, `DAKERA_ENCRYPTION_KEY` |
 | `dakera.models.pull` | `[]` | Models an init container pre-pulls (`dakera models pull`); `configured` = what the env configures |
 | `dakera.models.persistence.enabled` | `false` | Keep the model cache (`/app/models`) on a PVC (on automatically while a v0.12 feature that needs models is enabled) |
@@ -225,7 +248,7 @@ variables, constraints, sizing and verification per feature, is
 
 | Feature | Values | Example file | Costs | Constraints | Verify (`GET /v1/capabilities`) |
 |---|---|---|---|---|---|
-| **Multilingual** (bge-m3, per-language full-text, CJK bigrams, query languages, per-request `lang`) | `features.multilingual.*` (`fulltextLanguage`, `cjkBigrams`, `queryLang`, `maxSeqLength`) | `values-multilingual.yaml` | bge-m3 ~570 MB (+ ORT copy), CPU ONNX only, truncation 2048 tokens | **Fresh store**; `config.tiered: "0"`; not with late interaction / vision; one-way for v0.11 | `default_model` = `bge-m3` |
+| **Multilingual** (bge-m3, per-language full-text, CJK bigrams, query languages, per-request `lang`) | `features.multilingual.*` (`fulltextLanguage`, `cjkBigrams`, `queryLang`, `maxSeqLength`) | `values-multilingual.yaml` | bge-m3 ~570 MB (+ ORT copy), CPU ONNX only, truncation 2048 tokens | Fresh store, or an existing one re-embedded in the background (0.12.1); `config.tiered: "0"`; not with late interaction / vision; one-way for v0.11 | `default_model` = `bge-m3` |
 | **Attachments + speech to text** (Whisper, five models) | `features.multimodal.*` (`attachmentMaxBytes`, `memHighWaterFraction`, `resources`) | `values-multimodal.yaml` | see the model table (whisper-tiny.en ~151 MB); 8Gi / 4 cores (the measured configuration: 530 MiB anonymous with every model, +1.9 GiB image peak) | Any store; WAV only (multilingual by default, language auto-detected); media jobs wait up to 10 s for memory, then `503` + `Retry-After` | `attachments.enabled` |
 | **Image / page indexing, visual recall** (colmodernvbert) | `features.vision.*` (`resources`) | `values-vision.yaml` | ~966 MB (+ ORT copy), conversion reserves ~1 GB, ~10.7 s per page on CPU, one page at a time | **A dedicated store: its own release** (own MinIO / bucket and volume); `config.tiered: "0"`; PNG only; not with the text models; one-way for v0.11 | `vision.enabled`, `scoring.late_interaction.lane` = `visual` |
 | **Multi-vector records** | `features.records.*` (`maxVectors`, `maxBytes`) | `values-records.yaml` | extras stored beside the primary vector; default limits 4096 vectors / 8 MiB per record | Any store; at most 8 extra representations per record | `records.enabled` |
@@ -235,7 +258,7 @@ variables, constraints, sizing and verification per feature, is
 
 ```bash
 # multilingual search on a fresh install (from a clone of this repository, for the example file)
-helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.12.0 -n dakera --create-namespace \
+helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.12.1 -n dakera --create-namespace \
   --set dakera.rootApiKey=$(openssl rand -hex 32) --set minio.rootPassword=$(openssl rand -hex 16) \
   -f examples/values-multilingual.yaml
 # several combinable features: examples/values-combined.yaml (multilingual + multimodal + records + rabitq)
@@ -253,13 +276,13 @@ dakera:
   features:
     multilingual:
       enabled: true
-      fulltextLanguage: de           # new namespace indexes; or multilingual (no stemming), zh, ja, ko, th, ...
+      fulltextLanguage: de           # or multilingual (no stemming), zh, ja, ko, th, ...
       queryLang: auto                # en de fr es it pt nl, or auto (per query)
 ```
 
-Requests may also send `"lang"`. A fresh store only (see below). Verify: `default_model` is `bge-m3`, `fulltext_language`
-and `query_languages` on `/v1/capabilities`. Re-analyse an existing namespace: `POST /admin/fulltext/reindex`
-`{"namespace": "...", "rebuild": true}`. The model is ~570 MB, not in the image; truncation defaults to 2048 tokens
+Requests may also send `"lang"`. On an existing store the change of model re-embeds it in the background (see below).
+Verify: `default_model` is `bge-m3`, `fulltext_language` and `query_languages` on `/v1/capabilities`. Existing full-text
+indexes built with another analyzer are re-analysed in the background at the next start. The model is ~570 MB, not in the image; truncation defaults to 2048 tokens
 (`maxSeqLength`: it supports 8192, at about 4 GiB of attention scores per layer per row).
 
 ### Multimodal: attachments and speech to text
@@ -383,14 +406,19 @@ in the pod (`kubectl exec deploy/<release>-dakera -- dakera models list`).
 
 ### Before you switch one on
 
-- **Multilingual, late interaction and vision change the embedding model or the lane.** The store records its model and a
-  pod with another one exits at startup (the log names both). Use a fresh store, or migrate: acknowledge the change for ONE
-  rollout with `extraEnv` `DAKERA_ALLOW_MODEL_CHANGE=1`, pull the model, re-embed with
-  `POST /admin/namespaces/migrate-dimensions` (`{"target_dimension": 1024, "reembed_same_dimension": true}` for
-  bge-large to bge-m3), then remove it. Take a backup first. `dakera downgrade` (the `rollback` Job) refuses a
-  store on bge-m3, colbert-small or the visual lane.
-- **Multilingual**: `fulltextLanguage` applies to **new** namespace indexes; re-analyse an existing one with
-  `POST /admin/fulltext/reindex {"namespace": "...", "rebuild": true}` (global admin key).
+- **Multilingual, late interaction and vision change the embedding model or the lane.** The store records its model.
+  Take a backup first.
+  - **Multilingual** on an existing store (0.12.1): the pod starts and re-embeds the store with bge-m3 in the background,
+    one agent namespace at a time; until its turn each namespace is answered with the model its memories are in, so
+    recall stays correct. Progress: `/health` `embedding_model_change`, `/v1/capabilities` `reembed_pending`. No flag.
+  - **Late interaction and vision** are not re-embedded in the background (nor is a change under `DAKERA_TIERED=1`, or
+    from a recorded model this build does not know): a pod with another model exits at startup (the log names both).
+    Use a fresh store, or migrate: acknowledge the change for ONE rollout with `extraEnv` `DAKERA_ALLOW_MODEL_CHANGE=1`,
+    pull the model, re-embed with `POST /admin/namespaces/migrate-dimensions`
+    (`{"target_dimension": <dim>, "reembed_same_dimension": true}`), then remove it.
+  - `dakera downgrade` (the `rollback` Job) refuses a store on bge-m3, colbert-small or the visual lane.
+- **Multilingual**: `fulltextLanguage` applies to every index; an existing one built with another analyzer is
+  re-analysed in the background at the next start (0.12.1).
 - **Vision**: deploy it as its own release (`helm install dakera-vision ...`): the agent namespaces hold page
   vectors, never put it over a text store.
 - Check what a running server has on: `GET /v1/capabilities` (any key with Read scope) and `GET /health`.
@@ -410,7 +438,7 @@ Ready 25 s after install.
 - Pre-pull before the pod serves: `dakera.models.pull: [configured]` (or a list of names).
 - Keep the cache across pod restarts: `dakera.models.persistence.enabled: true`.
 - Air-gapped: seed that volume from a host that can reach the Hub
-  (`docker run --rm -v <volume>:/app/models ghcr.io/dakera-ai/dakera:0.12.0 models pull --dir /app/models <model>`,
+  (`docker run --rm -v <volume>:/app/models ghcr.io/dakera-ai/dakera:0.12.1 models pull --dir /app/models <model>`,
   then mount it as the PVC), and use only models the image or the volume holds.
   See the server's [models-and-docker.md](https://github.com/Dakera-AI/dakera/blob/main/docs/models-and-docker.md).
 
@@ -418,8 +446,9 @@ Ready 25 s after install.
 
 The server pod is annotated for Prometheus (`prometheus.io/scrape`, port 3000, path `/metrics`). The server's v0.12 alert
 rules and dashboard are shipped as opt-in objects (off by default), both copied from the server repository, and every
-expression and panel reads a metric the v0.12 server emits (checked against a running 0.12.0 server; many appear in
-`/metrics` only once their event has happened: failures, cluster, encryption, Redis, media jobs):
+expression and panel reads a metric the v0.12 server emits (checked against a running 0.12.0 server; the files and the
+metrics are unchanged in 0.12.1; many appear in `/metrics` only once their event has happened: failures, cluster,
+encryption, Redis, media jobs):
 
 ```yaml
 monitoring:
@@ -450,13 +479,45 @@ dakera:
 ```
 
 Cluster nodes must not share one S3 bucket as their store, and a server locks
-its data root: one release of this chart is one node. When upgrading a running
-v0.11 cluster leave the secret unset until every node runs v0.12.0 (server
-UPGRADE.md, "Cluster").
+its data root: one release of this chart is one node. Give every release the same
+secret: create it once and point each release's `existingSecret` at it (one copy
+per Kubernetes namespace):
+
+```bash
+kubectl -n dakera create secret generic my-cluster-secret \
+  --from-literal=DAKERA_CLUSTER_SECRET=$(openssl rand -hex 32)
+```
+
+**Required from 0.12.1.** A cluster node without the secret exits with code 78
+before it serves anything, fresh install or upgraded (on 0.12.0 an upgraded node
+started without one, its node-to-node routes open). The chart refuses to render
+cluster mode (`DAKERA_CLUSTER_MODE` set to `1`, `true`, `yes` or `on`, or set with
+`valueFrom`) without `dakera.cluster.secret`, `dakera.cluster.existingSecret.name`
+or a `DAKERA_CLUSTER_SECRET` entry in `dakera.extraEnv`, and refuses a value
+shorter than 16 characters. It does not generate a secret: a value generated per
+release would differ from node to node. If you created `<fullname>-secrets`
+yourself with the key `DAKERA_CLUSTER_SECRET`, set
+`dakera.cluster.existingSecret.name=<fullname>-secrets`. `dakera --check-config`
+reports a missing or short secret on the node.
+
+**Upgrading a cluster to 0.12.1.** Nodes with and without the secret do not see
+each other: a node with it answers a node without it with `401` and drops its
+gossip. Server UPGRADE.md,
+["Cluster secret (required from 0.12.1)"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#cluster-secret-required-from-0121):
+
+| Starting point | What to do |
+|---|---|
+| 0.12.0 with the secret already set | Nothing new: `helm upgrade` release by release, with the same secret. |
+| 0.12.0 without it, or v0.11.108 | **Recommended, one window:** scale every node to 0 (`kubectl scale deploy/<fullname> --replicas=0` per release), then `helm upgrade` each release with the same secret (Helm sets the replicas back to `dakera.replicaCount`). The cluster is down for the restart only; no data is lost (each node keeps its own copy). |
+| | **Rolling, no downtime:** `helm upgrade` one release at a time, with the secret. Until the last one is done the cluster is two groups that do not see each other: each elects its own leader and replicates only within itself, and a client may not see a write made on a node of the other group. Changes a node could not deliver stay in its outbox and are retried; once every node runs 0.12.1 with the secret, reconciliation (at startup, then every 5 minutes) merges every node's data. Keep this to minutes. |
+
+Check: on every node `GET /admin/cluster/status` lists the other nodes as healthy
+members and the same leader; write on one node and read on another. Rotating the
+secret needs the same window (a node accepts one secret).
 
 ## Rolling back to v0.11
 
-Going back from v0.12.0 to v0.11.108 is supported (any v0.11 embedding model,
+Going back from v0.12 to v0.11.108 is supported (any v0.11 embedding model,
 encrypted or not). The v0.12 binary converts the data back with
 `dakera downgrade`, which must run **after** the server has stopped (it refuses,
 exit 78 with nothing changed, while a server runs on the data):
