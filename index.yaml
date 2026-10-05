@@ -3,6 +3,54 @@ entries:
   dakera:
   - annotations:
       artifacthub.io/changes: |
+        - kind: security
+          description: Dashboard 0.3.29 -> 0.5.0. The chart passed the root API key to the dashboard, and 0.3.x wrote it into every served page, so anyone who could open the dashboard held a super_admin key. 0.4+ signs operators in with their own key, kept server-side; the chart no longer gives the dashboard a key. Rotate the root key if the dashboard was reachable by people who should not hold it
+        - kind: changed
+          description: Dakera server 0.12.1 (chart 0.12.1); the image tag follows appVersion
+        - kind: security
+          description: Server 0.12.1 requires DAKERA_CLUSTER_SECRET on every cluster node, upgraded or not (an upgraded 0.12.0 node ran with open node-to-node routes); a node without it exits with code 78
+        - kind: changed
+          description: Cluster mode (DAKERA_CLUSTER_MODE in dakera.extraEnv) without dakera.cluster.secret, dakera.cluster.existingSecret or a DAKERA_CLUSTER_SECRET entry is refused at render time instead of deploying a pod that exits; the secret length (16+) is checked after trimming, in values.schema.json and the template
+        - kind: changed
+          description: Full-text indexes from v0.11 are re-analysed at startup by 0.12.1; the manual rebuild in the README and NOTES.txt is only for servers still on 0.12.0
+        - kind: changed
+          description: Changing the embedding model (e.g. features.multilingual on an existing store) re-embeds in the background; DAKERA_ALLOW_MODEL_CHANGE plus migrate-dimensions only for lateInteraction, vision and DAKERA_TIERED=1
+        - kind: changed
+          description: Server statistics count memories without sentence sub-memories and sessions with ended ones; memory totals drop and session totals rise on upgrade (no chart alert or dashboard reads them)
+        - kind: fixed
+          description: Server 0.12.1 fixes keyword search on v0.11 full-text indexes, statistics and session listing speed, missing agents in GET /v1/agents, and the 2026-10-04 code audit findings (security, data, search)
+      artifacthub.io/images: |
+        - name: dakera
+          image: ghcr.io/dakera-ai/dakera:0.12.1
+      artifacthub.io/official: "true"
+      artifacthub.io/signKey: |
+        fingerprint: keyless
+        url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
+    apiVersion: v2
+    appVersion: 0.12.1
+    created: "2026-10-05T16:30:28.812047253Z"
+    description: Dakera — AI agent memory platform
+    digest: 387a813319b2ee39d29e402171307e59358cc3ce29b189d891828294b84923c9
+    home: https://github.com/dakera-ai/dakera-helm
+    icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo.png
+    keywords:
+    - agent-memory
+    - ai-memory
+    - ai
+    - memory
+    - mcp
+    maintainers:
+    - name: Dakera AI
+      url: https://github.com/dakera-ai
+    name: dakera
+    sources:
+    - https://github.com/dakera-ai/dakera
+    type: application
+    urls:
+    - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.12.1/dakera-0.12.1.tgz
+    version: 0.12.1
+  - annotations:
+      artifacthub.io/changes: |
         - kind: changed
           description: Dakera server 0.12.0 (chart 0.12.0). v0.11 lives on the release/0.11 branch and chart versions 0.11.x
         - kind: changed
@@ -253,4 +301,4 @@ entries:
     urls:
     - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.55/dakera-0.11.55.tgz
     version: 0.11.55
-generated: "2026-10-01T14:39:28.937444429Z"
+generated: "2026-10-05T16:30:28.812090794Z"
