@@ -2,7 +2,9 @@
 # One-off rollback to v0.11.108: `dakera downgrade` makes the data v0.11.108's
 # again. Run it AFTER the server has stopped (scale the Deployment to 0 first):
 # it refuses (exit 78, nothing changed) while a server runs on the data. Same
-# environment and volumes as the server. Not part of a normal install; see the
+# environment and volumes as the server. The image is the server's (0.12.2): its
+# downgrade rewrites the binary RocksDB hot-tier records 0.12.2 writes as JSON
+# first, which an older v0.12 image would not. Not part of a normal install; see the
 # README, "Rolling back to v0.11". Read the JSON report on stdout:
 #   kubectl logs job/<fullname>-downgrade
 apiVersion: batch/v1

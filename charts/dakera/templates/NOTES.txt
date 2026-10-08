@@ -10,7 +10,7 @@ Dakera has been deployed!
     kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "dakera.fullname" . }}-dashboard 3002:3000
     Open: http://localhost:3002 and sign in with a Dakera API key (use the lowest scope that suffices).
 {{- if .Release.IsUpgrade }}
-    Chart 0.12.1 replaced Dashboard 0.3.x, which received the root API key and served it to every
+    Chart 0.12.1 and later replaced Dashboard 0.3.x, which received the root API key and served it to every
     browser. If the dashboard was reachable by anyone who should not hold that key, rotate dakera.rootApiKey.
 {{- end }}
 {{- end }}
@@ -71,6 +71,26 @@ Dakera has been deployed!
   Check on each node: GET /admin/cluster/status lists the other nodes and the same leader.
 {{- end }}
 
+{{- if .Release.IsUpgrade }}
+{{- $t := .Values.dakera.config.sessionIdleTimeoutSecs }}
+{{- if kindIs "float64" $t }}{{ $t = int64 $t }}{{ end }}
+{{- $ts := "" }}
+{{- if not (kindIs "invalid" $t) }}{{ $ts = toString $t }}{{ end }}
+
+== Server 0.12.2 ==
+{{- if eq $ts "0" }}
+  Sessions: the server ends no session for inactivity (dakera.config.sessionIdleTimeoutSecs: 0),
+  except one started with its own idle_timeout_secs.
+{{- else }}
+  Sessions now end after {{ if $ts }}{{ $ts }} s{{ else }}4 h (the server default){{ end }} without activity (dakera.config.sessionIdleTimeoutSecs).
+  Sessions already idle longer are closed, with their summaries, on the first passes after the upgrade.
+{{- end }}
+  Key entries ending in * from older versions stay inert until the key is saved again
+  (PATCH /admin/keys/{id}); GET /v1/auth/whoami lists them as inert_namespaces.
+  Writes are validated more strictly (reserved markers, agent ids over 241 bytes, content over the byte
+  limit on update). Server UPGRADE.md, "Upgrading from v0.12.1 to v0.12.2".
+{{- end }}
+
 == Next Steps ==
 {{- if not .Values.ingress.enabled }}
   To expose Dakera externally, enable the Ingress:
@@ -87,5 +107,6 @@ Dakera has been deployed!
   Docs: https://github.com/dakera-ai/dakera-docs
 
 
-  Upgrading from chart 0.11.x or 0.12.0? Read charts/dakera/CHANGELOG.md first.
-  Rolling back to v0.11: see the README, "Rolling back to v0.11".
+  Upgrading from chart 0.11.x, 0.12.0 or 0.12.1? Read charts/dakera/CHANGELOG.md first.
+  Rolling back to v0.11: see the README, "Rolling back to v0.11" (dakera downgrade runs with the
+  0.12.2 image: it rewrites the binary hot-tier records as JSON).

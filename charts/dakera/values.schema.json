@@ -41,7 +41,11 @@
             "tierCheckIntervalSecs": {"type": "integer", "description": "Tier check interval in seconds"},
             "maxBodySize": {"type": "string", "description": "Maximum HTTP body size in bytes"},
             "authEnabled": {"type": "boolean", "description": "Enable API key authentication"},
-            "rustLog": {"type": "string", "description": "Rust log level (e.g. info, debug, warn)"}
+            "rustLog": {"type": "string", "description": "Rust log level (e.g. info, debug, warn)"},
+            "sessionIdleTimeoutSecs": {"type": ["string", "integer"], "pattern": "^([0-9]+)?$", "minimum": 0, "description": "DAKERA_SESSION_IDLE_TIMEOUT_SECS (server 0.12.2): a session with no activity for this many seconds is ended by the server. Empty = the server default, 14400 (4 h); 0 = the server ends no session that did not set its own timeout; at most 2592000 (larger values are clamped)"},
+            "maxMemoryContentBytes": {"type": ["string", "integer"], "pattern": "^([1-9][0-9]*)?$", "minimum": 1, "description": "DAKERA_MAX_MEMORY_CONTENT_BYTES (server 0.12.2): the longest memory content in UTF-8 bytes. Empty = the server default, 100000; an integer > 0 (0 refuses the boot)"},
+            "vectorCacheBytes": {"type": ["string", "integer"], "pattern": "^([0-9]+|[0-9]+(\\.[0-9]+)? ?([kKmMgG]([iI]?[bB])?|[bB]))?$", "minimum": 0, "description": "DAKERA_VECTOR_CACHE_BYTES (server 0.12.2): the in-process L1 vector cache, a byte size (256MB, 1GB, or a bare number of bytes). Empty = the server default, 128MB. Not l1CacheSize (the tiered-storage hot tier)"},
+            "rocksdbRecordFormat": {"type": "string", "enum": ["", "binary", "json"], "description": "DAKERA_ROCKSDB_RECORD_FORMAT (server 0.12.2): how the RocksDB hot tier writes new records, binary (the server default) or json; both are always read. Empty = the server default"}
           }
         },
         "cluster": {

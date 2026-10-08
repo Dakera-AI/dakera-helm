@@ -3,6 +3,100 @@
 The chart version equals the Dakera server version it deploys. v0.11 lives on the
 `release/0.11` branch and in the 0.11.x chart versions (last published: 0.11.107).
 
+## 0.12.2 (Dakera server v0.12.2)
+
+Deploys server **0.12.2** (`ghcr.io/dakera-ai/dakera:0.12.2`) and Dashboard
+**0.5.1** (`ghcr.io/dakera-ai/dakera-dashboard:0.5.1`).
+
+### Upgrade notes (0.12.1 to 0.12.2)
+
+Read the server's
+[UPGRADE.md, "Upgrading from v0.12.1 to v0.12.2"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#upgrading-from-v0121-to-v0122)
+first. Nothing is migrated by hand: back up (`POST /admin/backups`), then
+`helm upgrade`. From 0.12.0 or 0.11.x, the 0.12.1 and 0.12.0 notes below apply
+too.
+
+1. **Sessions end automatically after 4 hours without activity**
+   (`DAKERA_SESSION_IDLE_TIMEOUT_SECS`, server default 14400). The server ends
+   them exactly as a client end does (memory count, summary memory, session-end
+   consolidation; `ended_reason: "idle"`). Sessions already open longer than the
+   timeout (orphans of crashed agents) are closed, with their summaries, on the
+   first passes after the upgrade. Activity is a memory written with the session,
+   a session-scoped recall or search, or `POST /v1/sessions/{id}/touch`. Keep the
+   v0.12.1 behaviour with `dakera.config.sessionIdleTimeoutSecs: "0"`; an agent
+   can also start a session with `idle_timeout_secs: 0`. Storing into an ended
+   session still answers 200, with `session_state: "ended"`.
+2. **Keys.** A key's `namespaces` may now hold a prefix pattern `p*` (strict:
+   `team-*` reaches `team-a`, not `team`; never a server-internal namespace).
+   An entry ending in `*` on a key created before 0.12.2 stays a literal name
+   that grants nothing until the key's namespaces are saved again
+   (`PATCH /admin/keys/{key_id}`; the dashboard's API Keys page offers
+   "Re-save to activate patterns"); `GET /v1/auth/whoami` lists such entries as
+   `inert_namespaces`. Keys no longer need `_dakera_sessions` for their agents'
+   sessions. Invalid entries (`a**b`, blanks, `_dakera_*`) are refused (400)
+   when a key is created or edited.
+3. **Stricter validation (400):** a client-supplied `dakera-curated` tag or
+   `_dakera_*` metadata key other than `_dakera_content_date` / `_dakera_lang`;
+   caller ids `mem_s` + 24 hex; memory-shaped records written through the raw
+   vector routes of an agent namespace (use `/v1/memory/*`); agent ids longer
+   than 241 bytes; content over `DAKERA_MAX_MEMORY_CONTENT_BYTES` (100000
+   **bytes**, now configurable) on update as well as store. `POST /v1/import`
+   validates each item as a new memory and skips refused ones with the reason.
+4. **Listings:** `GET /v1/agents/{id}/memories` and `/wake-up` leave sentence
+   sub-memories out unless `include_derived=true`; `GET /v1/agents`
+   `vector_count` no longer counts the namespace seed.
+5. **Storage:** the RocksDB hot tier writes binary records by default
+   (`DAKERA_ROCKSDB_RECORD_FORMAT`). Both formats are always read. Rolling back
+   to chart / server 0.12.1 or 0.12.0 needs nothing. Rolling back to v0.11.108
+   needs `dakera downgrade` run **with the 0.12.2 image** (the rollback Job's
+   default): it rewrites binary records as JSON first (report field
+   `hot_tier_records_rewritten_as_json`). Do not point `rollback.image` at an
+   older v0.12 image. v0.11.108 cannot address namespace names or record ids
+   longer than 200 bytes stored by 0.12.2 (server `docs/v0.12/rollback.md`,
+   row 23b).
+6. **On the first start** the derivation reconciler heals existing sentence
+   sub-memories in the background; `GET /admin/derivations/status` shows its
+   progress.
+
+### Added
+- Optional values under `dakera.config`, rendered into the ConfigMap only when
+  set (empty: the server's default applies), each checked by
+  `values.schema.json` against what the server accepts at boot (every name is in
+  the server's `known_env.rs`):
+  - `sessionIdleTimeoutSecs` → `DAKERA_SESSION_IDLE_TIMEOUT_SECS` (default
+    14400 = 4 h; `"0"` = the server ends no session by itself; at most 30 days,
+    larger values are clamped).
+  - `maxMemoryContentBytes` → `DAKERA_MAX_MEMORY_CONTENT_BYTES` (default
+    100000; an integer > 0, `0` refuses the boot).
+  - `vectorCacheBytes` → `DAKERA_VECTOR_CACHE_BYTES` (the in-process L1 vector
+    cache; default `128MB`; a byte size such as `256MB`). Not `l1CacheSize`,
+    the tiered-storage hot-tier budget (`DAKERA_L1_CACHE_SIZE`).
+  - `rocksdbRecordFormat` → `DAKERA_ROCKSDB_RECORD_FORMAT` (`binary`, the
+    default, or `json`).
+  A `0` is rendered as `"0"`, and a number written unquoted in a values file is
+  rendered as an integer, not in exponent form.
+- NOTES.txt: after an upgrade, the session idle timeout in effect and the key
+  pattern note.
+- `scripts/validate-chart.sh`: the new values are absent by default, rendered
+  when set (including `0` and numbers from a values file), and values the server
+  refuses at boot are refused at render time.
+
+### Changed
+- Chart and `appVersion` 0.12.2; the server image tag follows `appVersion`.
+- Dashboard 0.5.0 → 0.5.1: Add agent (`POST /v1/agents`), in-place key edits,
+  rotation with a grace period, prefix-pattern grant chips, session auto-end
+  labels and "Mark active", sign-in identity from `GET /v1/auth/whoami`. It
+  works with servers 0.12.0 and 0.12.1 too (features that need 0.12.2 fall
+  back or stay hidden). Same deployment: no new environment variable, same
+  probes, still no API key in the dashboard pod.
+- The rollback Job's notes (values.yaml, README, NOTES.txt): `dakera downgrade`
+  runs with the 0.12.2 image.
+- Artifact Hub `images` lists the dashboard image too.
+
+### Removed
+- Nothing: every variable the chart renders for the server is still read by
+  0.12.2 (checked against `crates/config/src/known_env.rs`).
+
 ## 0.12.1 (Dakera server v0.12.1)
 
 ### Security: the dashboard no longer receives the root API key
