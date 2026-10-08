@@ -3,6 +3,50 @@ entries:
   dakera:
   - annotations:
       artifacthub.io/changes: |
+        - kind: changed
+          description: Dakera server 0.12.2 (chart 0.12.2); the image tag follows appVersion. Dashboard 0.5.0 -> 0.5.1 (add agent, in-place key edits, rotation grace, session auto-end labels; works with 0.12.0 and 0.12.1 too)
+        - kind: changed
+          description: Server 0.12.2 ends sessions after 4 h without activity by default (DAKERA_SESSION_IDLE_TIMEOUT_SECS); sessions already idle longer are closed, with their summaries, on the first passes after the upgrade. New optional dakera.config.sessionIdleTimeoutSecs ("0" = the server ends no session by itself)
+        - kind: added
+          description: Optional dakera.config.maxMemoryContentBytes (DAKERA_MAX_MEMORY_CONTENT_BYTES, default 100000 bytes), vectorCacheBytes (DAKERA_VECTOR_CACHE_BYTES, the L1 vector cache, default 128MB; not l1CacheSize) and rocksdbRecordFormat (DAKERA_ROCKSDB_RECORD_FORMAT, binary default | json); rendered only when set, checked by values.schema.json
+        - kind: changed
+          description: Server 0.12.2 validates more strictly (400 for reserved dakera-curated / _dakera_* markers, mem_s ids, agent ids over 241 bytes, memory-shaped writes through raw vector routes, content over the byte limit on update); keys gain prefix patterns p*, and pre-0.12.2 entries ending in * stay inert until the key is saved again
+        - kind: changed
+          description: Rollback to v0.11.108 must run dakera downgrade with the 0.12.2 image (the rollback Job's default), which rewrites the binary RocksDB hot-tier records 0.12.2 writes as JSON. Rolling back to 0.12.0 / 0.12.1 needs nothing
+      artifacthub.io/images: |
+        - name: dakera
+          image: ghcr.io/dakera-ai/dakera:0.12.2
+        - name: dakera-dashboard
+          image: ghcr.io/dakera-ai/dakera-dashboard:0.5.1
+      artifacthub.io/official: "true"
+      artifacthub.io/signKey: |
+        fingerprint: keyless
+        url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
+    apiVersion: v2
+    appVersion: 0.12.2
+    created: "2026-10-08T16:46:27.311357986Z"
+    description: Dakera — AI agent memory platform
+    digest: a0574e2846032b374daabcda11b82cc9c6f232c90271b5aa4599cdc88ae5b40b
+    home: https://github.com/dakera-ai/dakera-helm
+    icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo.png
+    keywords:
+    - agent-memory
+    - ai-memory
+    - ai
+    - memory
+    - mcp
+    maintainers:
+    - name: Dakera AI
+      url: https://github.com/dakera-ai
+    name: dakera
+    sources:
+    - https://github.com/dakera-ai/dakera
+    type: application
+    urls:
+    - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.12.2/dakera-0.12.2.tgz
+    version: 0.12.2
+  - annotations:
+      artifacthub.io/changes: |
         - kind: security
           description: Dashboard 0.3.29 -> 0.5.0. The chart passed the root API key to the dashboard, and 0.3.x wrote it into every served page, so anyone who could open the dashboard held a super_admin key. 0.4+ signs operators in with their own key, kept server-side; the chart no longer gives the dashboard a key. Rotate the root key if the dashboard was reachable by people who should not hold it
         - kind: changed
@@ -301,4 +345,4 @@ entries:
     urls:
     - https://github.com/Dakera-AI/dakera-helm/releases/download/dakera-0.11.55/dakera-0.11.55.tgz
     version: 0.11.55
-generated: "2026-10-05T16:30:28.812090794Z"
+generated: "2026-10-08T16:46:27.311403932Z"
