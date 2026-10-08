@@ -34,6 +34,10 @@ data:
   DAKERA_MAX_BODY_SIZE: {{ .Values.dakera.config.maxBodySize | quote }}
   DAKERA_AUTH_ENABLED: {{ .Values.dakera.config.authEnabled | quote }}
   RUST_LOG: {{ .Values.dakera.config.rustLog | quote }}
+  {{- with (include "dakera.config.optionalEnv" . | trim) }}
+  # Server 0.12.2 settings (dakera.config.*), only those that are set
+  {{- . | nindent 2 }}
+  {{- end }}
   {{- with (include "dakera.features.env" . | trim) }}
   # v0.12 features (dakera.features.*), all off by default
   {{- . | nindent 2 }}

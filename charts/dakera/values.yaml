@@ -6,7 +6,7 @@
 #   helm install dakera ./charts/dakera --set dakera.replicaCount=3
 
 # ---- Dakera Server ----------------------------------------------------------
-# Chart 0.12.1 deploys Dakera server v0.12.1. For v0.11 use the release/0.11
+# Chart 0.12.2 deploys Dakera server v0.12.2. For v0.11 use the release/0.11
 # branch or a 0.11.x chart version (see README, "Versions").
 dakera:
   image:
@@ -52,6 +52,40 @@ dakera:
     authEnabled: true
     rustLog: info
 
+    # ---- Server 0.12.2 settings: optional, rendered only when set -----------------------
+    # Empty ("") leaves the variable out and the server's default applies. Write them as
+    # strings. Every value below is checked by values.schema.json: the server refuses to
+    # boot on a value it cannot read.
+    #
+    # DAKERA_SESSION_IDLE_TIMEOUT_SECS: a session with no activity for this many seconds is
+    # ended by the server, exactly as a client end (memory count, summary memory, session-end
+    # consolidation; ended_reason "idle"). Server default 14400 (4 h). "0" = the server ends
+    # no session that did not set its own idle_timeout_secs. At most 2592000 (30 days);
+    # larger values are clamped. Activity: a memory written with the session, a
+    # session-scoped recall / search, or POST /v1/sessions/{id}/touch. Also adjustable at
+    # runtime (PUT /admin/config session_idle_timeout_secs).
+    #   sessionIdleTimeoutSecs: "14400"
+    sessionIdleTimeoutSecs: ""
+    # DAKERA_MAX_MEMORY_CONTENT_BYTES: the longest memory content, in UTF-8 BYTES (not
+    # characters), any memory write accepts (store, batch, update, import, transcripts,
+    # consolidate / summarize output, a session-end summary). Server default 100000. An
+    # integer > 0 ("0" refuses the boot). Bounded in practice by maxBodySize.
+    #   maxMemoryContentBytes: "100000"
+    maxMemoryContentBytes: ""
+    # DAKERA_VECTOR_CACHE_BYTES: the in-process L1 VECTOR cache (point reads of recently
+    # written or read records). Server default 128MB. A byte size ("256MB", "1GB",
+    # "268435456": a bare number is bytes). NOT l1CacheSize above, which is the
+    # tiered-storage hot-tier budget (DAKERA_L1_CACHE_SIZE). Counts against the memory limit.
+    #   vectorCacheBytes: "256MB"
+    vectorCacheBytes: ""
+    # DAKERA_ROCKSDB_RECORD_FORMAT: how the RocksDB hot tier writes NEW records: binary (the
+    # 0.12.2 default: raw float embeddings, about a third of the bytes, faster decode) or
+    # json (the pre-0.12.2 writer). Both are always read, so it can change at any restart.
+    # json is not needed to roll back: 0.12.0 / 0.12.1 read binary records, and the rollback
+    # Job (dakera downgrade, 0.12.2 image) rewrites them as JSON for v0.11.108.
+    #   rocksdbRecordFormat: binary
+    rocksdbRecordFormat: ""
+
   # Root API key — REQUIRED. Set via --set or external secret.
   # rootApiKey: ""
 
@@ -77,7 +111,8 @@ dakera:
   # the chart sets from `config` above. Standard Kubernetes EnvVar list: each item
   # is {name, value} or {name, valueFrom}. Do not repeat a name the chart already
   # sets (DAKERA_HOST/PORT/GRPC_PORT/STORAGE/STORAGE_PATH/S3_*/AUTH_ENABLED/
-  # TIERED*/SEARCH_MODE/..., RUST_LOG). DAKERA_DATA_DIR is an alias of
+  # TIERED*/SEARCH_MODE/..., RUST_LOG; the 0.12.2 settings in `config` when set: an
+  # extraEnv entry wins over the ConfigMap). DAKERA_DATA_DIR is an alias of
   # DAKERA_STORAGE_PATH: do not set it. Values must be strings.
   #
   #   extraEnv:
@@ -291,9 +326,14 @@ dakera:
 #   helm template <release> ./charts/dakera <your values> \
 #     --set rollback.enabled=true --show-only templates/rollback-job.yaml \
 #     | kubectl apply -f -
+# The Job must run with the image of the version being rolled back, 0.12.2 (the default):
+# 0.12.2 writes binary RocksDB hot-tier records, and its `dakera downgrade` rewrites them
+# as JSON before v0.11.108 can read them (report field hot_tier_records_rewritten_as_json).
+# A 0.12.0 / 0.12.1 image would not. Rolling back to 0.12.0 / 0.12.1 needs no Job.
 rollback:
   enabled: false
-  # Image that runs `downgrade`: the v0.12 image (default: the server's).
+  # Image that runs `downgrade`: leave empty (the server's image, 0.12.2). Never an older
+  # v0.12 image after 0.12.2 has run on the data (see above).
   image: ""
   ttlSecondsAfterFinished: 86400
 
@@ -305,7 +345,7 @@ dashboard:
   enabled: true
   image:
     repository: ghcr.io/dakera-ai/dakera-dashboard
-    tag: "0.5.0"
+    tag: "0.5.1"
     pullPolicy: IfNotPresent
 
   replicaCount: 1

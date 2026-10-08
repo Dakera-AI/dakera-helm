@@ -2,8 +2,8 @@ apiVersion: v2
 name: dakera
 description: Dakera — AI agent memory platform
 type: application
-version: 0.12.1
-appVersion: "0.12.1"
+version: 0.12.2
+appVersion: "0.12.2"
 keywords:
   - agent-memory
   - ai-memory
@@ -20,25 +20,21 @@ icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo
 annotations:
   artifacthub.io/images: |
     - name: dakera
-      image: ghcr.io/dakera-ai/dakera:0.12.1
+      image: ghcr.io/dakera-ai/dakera:0.12.2
+    - name: dakera-dashboard
+      image: ghcr.io/dakera-ai/dakera-dashboard:0.5.1
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
-    - kind: security
-      description: Dashboard 0.3.29 -> 0.5.0. The chart passed the root API key to the dashboard, and 0.3.x wrote it into every served page, so anyone who could open the dashboard held a super_admin key. 0.4+ signs operators in with their own key, kept server-side; the chart no longer gives the dashboard a key. Rotate the root key if the dashboard was reachable by people who should not hold it
     - kind: changed
-      description: Dakera server 0.12.1 (chart 0.12.1); the image tag follows appVersion
-    - kind: security
-      description: Server 0.12.1 requires DAKERA_CLUSTER_SECRET on every cluster node, upgraded or not (an upgraded 0.12.0 node ran with open node-to-node routes); a node without it exits with code 78
+      description: Dakera server 0.12.2 (chart 0.12.2); the image tag follows appVersion. Dashboard 0.5.0 -> 0.5.1 (add agent, in-place key edits, rotation grace, session auto-end labels; works with 0.12.0 and 0.12.1 too)
     - kind: changed
-      description: Cluster mode (DAKERA_CLUSTER_MODE in dakera.extraEnv) without dakera.cluster.secret, dakera.cluster.existingSecret or a DAKERA_CLUSTER_SECRET entry is refused at render time instead of deploying a pod that exits; the secret length (16+) is checked after trimming, in values.schema.json and the template
+      description: Server 0.12.2 ends sessions after 4 h without activity by default (DAKERA_SESSION_IDLE_TIMEOUT_SECS); sessions already idle longer are closed, with their summaries, on the first passes after the upgrade. New optional dakera.config.sessionIdleTimeoutSecs ("0" = the server ends no session by itself)
+    - kind: added
+      description: Optional dakera.config.maxMemoryContentBytes (DAKERA_MAX_MEMORY_CONTENT_BYTES, default 100000 bytes), vectorCacheBytes (DAKERA_VECTOR_CACHE_BYTES, the L1 vector cache, default 128MB; not l1CacheSize) and rocksdbRecordFormat (DAKERA_ROCKSDB_RECORD_FORMAT, binary default | json); rendered only when set, checked by values.schema.json
     - kind: changed
-      description: Full-text indexes from v0.11 are re-analysed at startup by 0.12.1; the manual rebuild in the README and NOTES.txt is only for servers still on 0.12.0
+      description: Server 0.12.2 validates more strictly (400 for reserved dakera-curated / _dakera_* markers, mem_s ids, agent ids over 241 bytes, memory-shaped writes through raw vector routes, content over the byte limit on update); keys gain prefix patterns p*, and pre-0.12.2 entries ending in * stay inert until the key is saved again
     - kind: changed
-      description: Changing the embedding model (e.g. features.multilingual on an existing store) re-embeds in the background; DAKERA_ALLOW_MODEL_CHANGE plus migrate-dimensions only for lateInteraction, vision and DAKERA_TIERED=1
-    - kind: changed
-      description: Server statistics count memories without sentence sub-memories and sessions with ended ones; memory totals drop and session totals rise on upgrade (no chart alert or dashboard reads them)
-    - kind: fixed
-      description: Server 0.12.1 fixes keyword search on v0.11 full-text indexes, statistics and session listing speed, missing agents in GET /v1/agents, and the 2026-10-04 code audit findings (security, data, search)
+      description: Rollback to v0.11.108 must run dakera downgrade with the 0.12.2 image (the rollback Job's default), which rewrites the binary RocksDB hot-tier records 0.12.2 writes as JSON. Rolling back to 0.12.0 / 0.12.1 needs nothing
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub

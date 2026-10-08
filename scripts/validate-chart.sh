@@ -18,6 +18,11 @@ for v in DAKERA_MODEL DAKERA_ATTACHMENTS DAKERA_VISION DAKERA_RECORDS DAKERA_SCO
          DAKERA_FULLTEXT_LANGUAGE DAKERA_QUERY_LANG; do
   if grep -q "$v" /tmp/chart-default.yaml; then echo "FAIL: $v rendered with every feature off"; fail=1; fi
 done
+# The optional 0.12.2 settings are left out unless set (the server's defaults apply).
+for v in DAKERA_SESSION_IDLE_TIMEOUT_SECS DAKERA_MAX_MEMORY_CONTENT_BYTES DAKERA_VECTOR_CACHE_BYTES \
+         DAKERA_ROCKSDB_RECORD_FORMAT; do
+  if grep -q "$v" /tmp/chart-default.yaml; then echo "FAIL: $v rendered while unset"; fail=1; fi
+done
 if grep -q "initContainers" /tmp/chart-default.yaml; then echo "FAIL: init container rendered with every feature off"; fail=1; fi
 
 for f in "$CHART"/examples/values-*.yaml; do
@@ -30,6 +35,21 @@ echo "== monitoring objects"
 "$HELM" lint "$CHART" "${REQ[@]}" --set monitoring.prometheusRule.enabled=true --set monitoring.grafanaDashboard.enabled=true
 "$HELM" template r "$CHART" "${REQ[@]}" --set monitoring.prometheusRule.enabled=true --set monitoring.grafanaDashboard.enabled=true \
   | grep -q "kind: PrometheusRule"
+
+echo "== server 0.12.2 settings: rendered when set, 0 kept, numbers from a values file as integers"
+OPT=(--set dakera.config.sessionIdleTimeoutSecs=0 --set dakera.config.maxMemoryContentBytes=200000
+     --set dakera.config.vectorCacheBytes=256MB --set dakera.config.rocksdbRecordFormat=json)
+"$HELM" lint "$CHART" "${REQ[@]}" "${OPT[@]}"
+"$HELM" template r "$CHART" "${REQ[@]}" "${OPT[@]}" --show-only templates/configmap.yaml > /tmp/chart-opt.yaml
+for kv in 'DAKERA_SESSION_IDLE_TIMEOUT_SECS: "0"' 'DAKERA_MAX_MEMORY_CONTENT_BYTES: "200000"' \
+          'DAKERA_VECTOR_CACHE_BYTES: "256MB"' 'DAKERA_ROCKSDB_RECORD_FORMAT: "json"'; do
+  grep -qF "$kv" /tmp/chart-opt.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
+done
+printf 'dakera:\n  config:\n    sessionIdleTimeoutSecs: 14400\n    vectorCacheBytes: 268435456\n' > /tmp/chart-opt-values.yaml
+"$HELM" template r "$CHART" "${REQ[@]}" -f /tmp/chart-opt-values.yaml --show-only templates/configmap.yaml > /tmp/chart-opt.yaml
+for kv in 'DAKERA_SESSION_IDLE_TIMEOUT_SECS: "14400"' 'DAKERA_VECTOR_CACHE_BYTES: "268435456"'; do
+  grep -qF "$kv" /tmp/chart-opt.yaml || { echo "FAIL: $kv not rendered from a values file"; fail=1; }
+done
 
 echo "== refused combinations"
 expect_refusal() {
@@ -48,6 +68,11 @@ expect_refusal "vision + multilingual"                   --set dakera.features.v
 expect_refusal "rabitq with another search mode"         --set dakera.features.rabitq.enabled=true --set dakera.config.searchMode=float
 expect_refusal "rabitq bits without rabitq"              --set dakera.features.rabitq.bits=4
 expect_refusal "rabitq bits out of range"                --set dakera.features.rabitq.enabled=true --set dakera.features.rabitq.bits=9
+# Values the 0.12.2 server refuses to boot on.
+expect_refusal "memory content limit 0"                  --set dakera.config.maxMemoryContentBytes=0
+expect_refusal "unknown record format"                   --set dakera.config.rocksdbRecordFormat=yaml
+expect_refusal "vector cache not a byte size"            --set dakera.config.vectorCacheBytes=lots
+expect_refusal "idle timeout not a number of seconds"    --set dakera.config.sessionIdleTimeoutSecs=4h
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
 expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
 # Server 0.12.1: a cluster node without DAKERA_CLUSTER_SECRET exits with code 78.

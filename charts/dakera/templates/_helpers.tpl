@@ -229,6 +229,30 @@ DAKERA_RABITQ_BITS: {{ . | quote }}
 {{- end }}
 {{- end }}
 
+{{/*
+Optional server settings of dakera.config (server 0.12.2), as ConfigMap entries. A value
+that is unset or "" is left out (the server's default applies); 0 is a value
+(sessionIdleTimeoutSecs: 0 = the server ends no session by itself), so the test is on the
+string form, not on truthiness. A number from a values file arrives as float64: it is
+rendered as an integer, never as 1e+05.
+*/}}
+{{- define "dakera.config.optionalEnv" -}}
+{{- $c := .Values.dakera.config -}}
+{{- range $pair := list
+      (list "sessionIdleTimeoutSecs" "DAKERA_SESSION_IDLE_TIMEOUT_SECS")
+      (list "maxMemoryContentBytes" "DAKERA_MAX_MEMORY_CONTENT_BYTES")
+      (list "vectorCacheBytes" "DAKERA_VECTOR_CACHE_BYTES")
+      (list "rocksdbRecordFormat" "DAKERA_ROCKSDB_RECORD_FORMAT") }}
+{{- $v := index $c (index $pair 0) }}
+{{- if not (kindIs "invalid" $v) }}
+{{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}
+{{- if ne (toString $v) "" }}
+{{ index $pair 1 }}: {{ toString $v | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{/* DAKERA_SEARCH_MODE: rabitq when that feature is on, else dakera.config.searchMode. */}}
 {{- define "dakera.searchMode" -}}
 {{- if .Values.dakera.features.rabitq.enabled -}}rabitq{{- else -}}{{ .Values.dakera.config.searchMode }}{{- end -}}
