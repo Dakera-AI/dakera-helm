@@ -31,7 +31,8 @@ spec:
         prometheus.io/port: {{ .Values.dakera.config.port | quote }}
         prometheus.io/path: "/metrics"
     spec:
-      terminationGracePeriodSeconds: 30
+      # Media jobs (up to 15 s), the REST drain (shutdownDrainSecs), the final flushes.
+      terminationGracePeriodSeconds: {{ .Values.dakera.terminationGracePeriodSeconds }}
       # The server does not call the Kubernetes API.
       automountServiceAccountToken: false
       {{- with .Values.global.imagePullSecrets }}
@@ -263,6 +264,11 @@ spec:
             - name: DAKERA_SESSION_TTL_HOURS
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.dashboard.trustedProxies }}
+            # Proxies whose X-Forwarded-For names the client (dashboard 0.5.2, nginx real_ip).
+            - name: DAKERA_TRUSTED_PROXIES
+              value: {{ . | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /_session/healthz
@@ -279,8 +285,19 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if .Values.dashboard.securityContext.readOnlyRootFilesystem }}
+          # Dashboard 0.5.2 writes its runtime nginx configuration, pid and temp files here.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- end }}
           resources:
             {{- toYaml .Values.dashboard.resources | nindent 12 }}
+      {{- if .Values.dashboard.securityContext.readOnlyRootFilesystem }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- end }}
 {{- end }}
 ---
 {{- if .Values.mcp.enabled }}

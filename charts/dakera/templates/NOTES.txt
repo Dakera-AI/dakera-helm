@@ -77,7 +77,14 @@ Dakera has been deployed!
 {{- $ts := "" }}
 {{- if not (kindIs "invalid" $t) }}{{ $ts = toString $t }}{{ end }}
 
-== Server 0.12.2 ==
+== Server 0.12.3 ==
+  POST /ops/shutdown needs a global super_admin key (an admin key gets 403); POST /admin/keys,
+  /v1/namespaces/{ns}/keys, /admin/backups and /admin/encryption/rotate-key refuse unknown fields (422).
+  The image is distroless (uid/gid 1000, no curl or shell tools); the probes are httpGet.
+  An idle keep-alive connection is closed after {{ .Values.dakera.config.httpHeaderReadTimeoutSecs | default "30" }} s: a proxy in front must drop idle connections
+  to the pods sooner (ingress-nginx upstream-keepalive-timeout; README, "Ingress and load balancers").
+
+== From server 0.12.1 or older (0.12.2 changes) ==
 {{- if eq $ts "0" }}
   Sessions: the server ends no session for inactivity (dakera.config.sessionIdleTimeoutSecs: 0),
   except one started with its own idle_timeout_secs.
@@ -89,6 +96,20 @@ Dakera has been deployed!
   (PATCH /admin/keys/{id}); GET /v1/auth/whoami lists them as inert_namespaces.
   Writes are validated more strictly (reserved markers, agent ids over 241 bytes, content over the byte
   limit on update). Server UPGRADE.md, "Upgrading from v0.12.1 to v0.12.2".
+{{- end }}
+
+{{- if not .Values.dakera.config.authEnabled }}
+
+== Authentication is OFF (dakera.config.authEnabled: false) ==
+  Anyone who reaches the Service is a SuperAdmin.
+{{- if .Values.dakera.config.allowedHosts }}
+  Host names accepted besides localhost, IPs and "{{ include "dakera.fullname" . }}": {{ .Values.dakera.config.allowedHosts }}
+{{- else }}
+  From server 0.12.3 a request whose Host is a dotted name gets 421 HOST_NOT_ALLOWED unless it is listed
+  in dakera.config.allowedHosts: in-cluster clients must call http://{{ include "dakera.fullname" . }}:{{ .Values.dakera.service.httpPort }},
+  not {{ include "dakera.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local{{ if and .Values.ingress.enabled .Values.ingress.apiHost }}, and the ingress host {{ .Values.ingress.apiHost }} is refused{{ end }}.
+  Set e.g. --set dakera.config.allowedHosts={{ include "dakera.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local{{ if and .Values.ingress.enabled .Values.ingress.apiHost }}\,{{ .Values.ingress.apiHost }}{{ end }}
+{{- end }}
 {{- end }}
 
 == Next Steps ==
@@ -107,6 +128,6 @@ Dakera has been deployed!
   Docs: https://github.com/dakera-ai/dakera-docs
 
 
-  Upgrading from chart 0.11.x, 0.12.0 or 0.12.1? Read charts/dakera/CHANGELOG.md first.
+  Upgrading from chart 0.11.x or 0.12.x? Read charts/dakera/CHANGELOG.md first.
   Rolling back to v0.11: see the README, "Rolling back to v0.11" (dakera downgrade runs with the
-  0.12.2 image: it rewrites the binary hot-tier records as JSON).
+  server's image: it rewrites the binary hot-tier records as JSON).

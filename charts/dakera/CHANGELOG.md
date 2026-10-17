@@ -3,12 +3,20 @@
 The chart version equals the Dakera server version it deploys. v0.11 lives on the
 `release/0.11` branch and in the 0.11.x chart versions (last published: 0.11.107).
 
-## Unreleased
+## 0.12.3 (Dakera server v0.12.3)
 
-Still deploys server 0.12.2 and Dashboard 0.5.1 (no version change); prepares the chart for the next server
-release.
+Deploys server **0.12.3** (`ghcr.io/dakera-ai/dakera:0.12.3`) and Dashboard **0.5.2**
+(`ghcr.io/dakera-ai/dakera-dashboard:0.5.2`). Released after both images are published.
 
-### Upgrade notes
+### Upgrade notes (0.12.0 – 0.12.2 to 0.12.3)
+
+Nothing is migrated by hand: back up (`POST /admin/backups`), then `helm upgrade`. Server behaviour that changes:
+`POST /ops/shutdown` needs a global `super_admin` key; four admin routes refuse unknown JSON fields (422); the image
+is distroless (uid/gid 1000, no `curl` or shell tools; the probes are `httpGet`); the GPU image is CUDA 13 (NVIDIA
+driver R580+). With **authentication off**, a request whose `Host` is a dotted name (the Service FQDN, the ingress
+host) gets 421 unless listed in `dakera.config.allowedHosts` (NOTES prints the names). Dashboard 0.5.2 runs as
+uid/gid 10001 with a read-only root and a `/tmp` emptyDir (`dashboard.securityContext`; an image up to 0.5.1 needs
+the old root settings, see values.yaml). Chart defaults that changed:
 
 1. **The server's root filesystem is read-only by default** (`dakera.readOnlyRootFilesystem: true`, was `false`),
    also for the models init container and the rollback Job. Everything the server writes is on a volume: the data
@@ -19,15 +27,15 @@ release.
    `minio.networkPolicy.enabled: true`), where the network plugin enforces NetworkPolicy. Anything else that used
    the bucket or scraped MinIO (a Prometheus) goes in `minio.networkPolicy.additionalFrom`, or set
    `minio.networkPolicy.enabled=false`. `kubectl port-forward` is not affected.
-3. **Behind ingress-nginx or a load balancer** (server releases after 0.12.2): the server closes an idle keep-alive
+3. **Behind ingress-nginx or a load balancer**: the server closes an idle keep-alive (or HTTP/2)
    connection after `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (30 s). Keep the proxy's upstream idle timeout below it
    (ingress-nginx `upstream-keepalive-timeout`, 60 s by default) or raise `dakera.config.httpHeaderReadTimeoutSecs`
    above it; README, "Ingress and load balancers".
 
 ### Added
 
-- Optional `dakera.config` settings of the server releases after 0.12.2, rendered only when set (a 0.12.2 image
-  would list them as unknown) and checked by `values.schema.json`: `httpHeaderReadTimeoutSecs`
+- Optional `dakera.config` settings of server 0.12.3, rendered only when set (an image up to 0.12.2 would list
+  them as unknown) and checked by `values.schema.json`: `httpHeaderReadTimeoutSecs`
   (`DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS`, 1 to 86400), `neighborhoodMode` (`inline` / `separate` / `off`),
   `neighborhoodEventTime`, `recallRankDepth` (1 to 1000), `recallCollapseDerived`, `recallExcludeSummaries`,
   `recallSessionCap`, `sentenceDecomp`, `supersedesEventTime`.
@@ -35,14 +43,27 @@ release.
   `MINIO_ROOT_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) instead of `<release>-secrets`; no secret in
   the values. Refused together with `dakera.rootApiKey`.
 - `minio.networkPolicy` (see above); `dakera.probes.timeoutSeconds` (5); `dashboard.securityContext`.
+- Server 0.12.3 settings `maxConnections` (`DAKERA_MAX_CONNECTIONS`), `shutdownDrainSecs`
+  (`DAKERA_SHUTDOWN_DRAIN_SECS`) and `allowedHosts` (`DAKERA_ALLOWED_HOSTS`), rendered only when set; NOTES warns
+  when authentication is off. New `dakera.terminationGracePeriodSeconds` (30): the chart refuses a
+  `shutdownDrainSecs` with which 15 s of media jobs + the drain + 5 s would not fit.
+- `dakera.config.documents.*`: the document-import settings of server 0.12.3 (`DAKERA_DOCUMENTS`, `DAKERA_DOCUMENT_*`),
+  each rendered only when set and range-checked. Document import is on by default in the server: PDF / DOCX
+  extraction runs in child processes using up to `extractConcurrency` x `extractMemoryMb` (2 x 1024 MB) inside the
+  pod's memory limit (4Gi by default): raise it or lower the concurrency for PDF-heavy imports.
+- `ingress.annotations` now defaults to `nginx.ingress.kubernetes.io/proxy-body-size: "500m"`: ingress-nginx's own
+  1m limit refused document uploads (25 MiB), imports and backups. Your annotations are merged with it.
+- `dashboard.trustedProxies` (`DAKERA_TRUSTED_PROXIES`, dashboard 0.5.2): the proxies whose `X-Forwarded-For` names
+  the client, for the sign-in throttle.
 
 ### Changed
 
 - Every pod: `automountServiceAccountToken: false` (nothing in the chart calls the Kubernetes API) and the
   `RuntimeDefault` seccomp profile. Server probes: `timeoutSeconds: 5` (the 1 s default fails a busy server); they
   stay `httpGet`, which needs nothing in the image (newer server images have no `curl`).
-- Dashboard: no privilege escalation and only `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` (its 0.5.1 image starts
-  as root; measured), and `global.imagePullSecrets` like the other pods. MCP: no privilege escalation, no capability.
+- Dashboard 0.5.1 -> 0.5.2: runs as uid/gid 10001, read-only root filesystem with a `/tmp` emptyDir, no
+  capability, no privilege escalation (checked on the 0.5.2 runtime), and `global.imagePullSecrets` like the other
+  pods. Its probes stay `httpGet` (the image has no `curl`). MCP: no privilege escalation, no capability.
 - The "create the Secret yourself" instructions printed without `rootApiKey` used `minioadmin` as the S3 access key
   while the built-in MinIO runs as `minio.rootUser`: they now use `minio.rootUser`.
 - No `/ops/shutdown` caller in the chart: the server's new `super_admin` requirement for it needs no change here.

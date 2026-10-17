@@ -20,10 +20,10 @@
 
 | | Dakera server | Chart version | Where |
 |---|---|---|---|
-| **Latest** | **v0.12.2** | **0.12.2** (and later 0.12.x) | `main` (this branch), the Helm repository and the OCI registry |
+| **Latest** | **v0.12.3** | **0.12.3** (and later 0.12.x) | `main` (this branch), the Helm repository and the OCI registry |
 | Previous | v0.11.x (last: v0.11.108) | 0.11.x | the [`release/0.11`](https://github.com/Dakera-AI/dakera-helm/tree/release/0.11) branch |
 
-`main` and the latest chart are **v0.12.2**. The v0.11 chart is kept on the
+`main` and the latest chart are **v0.12.3**. The v0.11 chart is kept on the
 `release/0.11` branch, unchanged, so a v0.11 setup stays findable and working.
 To stay on v0.11, pin the old chart version, for example:
 
@@ -37,7 +37,7 @@ helm install dakera dakera/dakera --version 0.11.107 ...
 set `--set dakera.image.tag=0.11.108` to run the final v0.11 server.
 `helm search repo dakera/dakera --versions` lists every published version. The
 chart version always equals the Dakera server version it deploys. Upgrading from
-v0.11, v0.12.0 or v0.12.1 to v0.12.2: read [CHANGELOG.md](CHANGELOG.md)
+v0.11 or v0.12.0–v0.12.2 to v0.12.3: read [CHANGELOG.md](CHANGELOG.md)
 and the server's
 [UPGRADE.md](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md).
 
@@ -58,7 +58,7 @@ Pin a specific version:
 
 ```bash
 helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera \
-  --version 0.12.2 \
+  --version 0.12.3 \
   --namespace dakera --create-namespace \
   --set dakera.rootApiKey=<your-key> \
   --set minio.rootPassword=<your-password>
@@ -86,6 +86,26 @@ helm upgrade dakera dakera/dakera --namespace dakera \
   --set minio.rootPassword=<your-password>
 ```
 
+### Upgrading from chart 0.12.2
+
+Chart 0.12.3 deploys server 0.12.3 and Dashboard 0.5.2; nothing is migrated by hand. Back up first
+(`POST /admin/backups`), then `helm upgrade` (from 0.12.0 / 0.12.1, the notes below apply too). What changes:
+
+- **Server image:** distroless, uid/gid 1000, no `curl` or shell tools (the probes are `httpGet`). The GPU image is
+  built on CUDA 13: GPU nodes need NVIDIA driver **R580 or newer**.
+- **API:** `POST /ops/shutdown` needs a global `super_admin` key (nothing in the chart calls it);
+  `POST /admin/keys`, `/v1/namespaces/{ns}/keys`, `/admin/backups` and `/admin/encryption/rotate-key` refuse
+  unknown JSON fields (422). Recall gains `neighborhood_mode` / `include_summaries` (server CHANGELOG 0.12.3).
+- **Connections:** an idle keep-alive (and HTTP/2) connection is closed after
+  `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (30 s): see "Ingress and load balancers". The shutdown drains REST
+  connections for `shutdownDrainSecs` (8 s); `dakera.terminationGracePeriodSeconds` (30) must hold 15 + it + 5.
+- **Authentication off** (`dakera.config.authEnabled: false`): a request whose `Host` is a dotted name (the
+  Service FQDN `<fullname>.<namespace>.svc.cluster.local`, the ingress host) gets **421** unless listed in
+  `dakera.config.allowedHosts`. `http://<fullname>:3000` and IPs keep working.
+- **Dashboard 0.5.2** runs as uid/gid 10001 with a read-only root (the chart mounts `/tmp`); new optional
+  `dashboard.trustedProxies` (`DAKERA_TRUSTED_PROXIES`). Chart defaults that changed: read-only root filesystem for
+  the server, the MinIO NetworkPolicy, no service-account tokens (CHANGELOG.md, 0.12.3, upgrade notes).
+
 ### Upgrading from chart 0.12.1
 
 Chart 0.12.2 deploys server 0.12.2 and Dashboard 0.5.1; nothing is migrated by hand. Back up first
@@ -105,7 +125,7 @@ Chart 0.12.2 deploys server 0.12.2 and Dashboard 0.5.1; nothing is migrated by h
   `mem_s` + 24 hex ids, memory-shaped writes through the raw vector routes of an agent namespace, agent ids
   over 241 bytes, content over `DAKERA_MAX_MEMORY_CONTENT_BYTES` (100000 bytes) on update as well as store.
 - **Storage:** the RocksDB hot tier writes binary records. Back to chart 0.12.1 / 0.12.0: nothing to do. Back
-  to v0.11.108: the rollback Job with the 0.12.2 image rewrites them as JSON (see "Rolling back to v0.11").
+  to v0.11.108: the rollback Job with the 0.12.2 (or later) image rewrites them as JSON (see "Rolling back to v0.11").
 
 New optional values (rendered only when set; empty = the server's default): `dakera.config.sessionIdleTimeoutSecs`,
 `maxMemoryContentBytes`, `vectorCacheBytes`, `rocksdbRecordFormat` (see "Common Options" and values.yaml). Details:
@@ -219,10 +239,14 @@ and `AWS_SECRET_ACCESS_KEY` (= the MinIO password). Not together with `dakera.ro
 | `dakera.config.maxMemoryContentBytes` | `""` (server: `100000`) | `DAKERA_MAX_MEMORY_CONTENT_BYTES`: longest memory content in UTF-8 **bytes** (integer > 0) |
 | `dakera.config.vectorCacheBytes` | `""` (server: `128MB`) | `DAKERA_VECTOR_CACHE_BYTES`: the in-process L1 **vector** cache, a byte size (`256MB`). Not `l1CacheSize` |
 | `dakera.config.rocksdbRecordFormat` | `""` (server: `binary`) | `DAKERA_ROCKSDB_RECORD_FORMAT`: how the RocksDB hot tier writes new records, `binary` or `json` (both always read) |
-| `dakera.config.httpHeaderReadTimeoutSecs` | `""` (server: `30`) | Server releases after 0.12.2. `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS`: seconds a client has to send a request head; an idle keep-alive connection is closed after it. 1 to 86400. See "Ingress and load balancers" |
-| `dakera.config.neighborhoodMode` | `""` (server: `inline`) | Server releases after 0.12.2. `DAKERA_NEIGHBORHOOD_MODE`: default neighbourhood context of a recall, `inline`, `separate` (in `context_memories`) or `off` |
-| `dakera.config.recallRankDepth` | `""` (server: `10`) | Server releases after 0.12.2. `DAKERA_RECALL_RANK_DEPTH`: ranking depth floor, 1 to 1000 |
-| `dakera.config.neighborhoodEventTime`, `recallCollapseDerived`, `recallExcludeSummaries`, `recallSessionCap`, `sentenceDecomp`, `supersedesEventTime` | `""` (server defaults) | Server releases after 0.12.2: `DAKERA_NEIGHBORHOOD_EVENT_TIME`, `DAKERA_RECALL_COLLAPSE_DERIVED`, `DAKERA_RECALL_EXCLUDE_SUMMARIES`, `DAKERA_RECALL_SESSION_CAP`, `DAKERA_SENTENCE_DECOMP`, `DAKERA_SUPERSEDES_EVENT_TIME` (values.yaml describes each). Rendered only when set: a 0.12.2 image would list them as unknown |
+| `dakera.config.httpHeaderReadTimeoutSecs` | `""` (server: `30`) | Server 0.12.3. `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS`: seconds a client has to send a request head; an idle keep-alive connection is closed after it. 1 to 86400. See "Ingress and load balancers" |
+| `dakera.config.neighborhoodMode` | `""` (server: `inline`) | Server 0.12.3. `DAKERA_NEIGHBORHOOD_MODE`: default neighbourhood context of a recall, `inline`, `separate` (in `context_memories`) or `off` |
+| `dakera.config.recallRankDepth` | `""` (server: `10`) | Server 0.12.3. `DAKERA_RECALL_RANK_DEPTH`: ranking depth floor, 1 to 1000 |
+| `dakera.config.maxConnections` | `""` (server: `10000`) | Server 0.12.3. `DAKERA_MAX_CONNECTIONS`: most open REST connections, 1 to 1000000 |
+| `dakera.config.shutdownDrainSecs` | `""` (server: `8`) | Server 0.12.3. `DAKERA_SHUTDOWN_DRAIN_SECS`: longest REST drain at shutdown, 0 to 3600. 15 + it + 5 must fit in `dakera.terminationGracePeriodSeconds` (`30`; the chart refuses otherwise) |
+| `dakera.config.documents.*` | `""` (server defaults) | Server 0.12.3 document import (on by default): `enabled`, `maxBytes` (25 MiB), `maxTextBytes`, `maxChunks`, `chunkTokens` (32–8192), `chunkOverlapTokens` (0–1024), `extractTimeoutSecs`, `extractMemoryMb` (1024), `extractConcurrency` (2). PDF / DOCX extraction uses up to `extractConcurrency` x `extractMemoryMb` on top of the server inside `dakera.resources.limits.memory` (4Gi): for PDF-heavy imports raise it (6Gi) or use concurrency 1 |
+| `dakera.config.allowedHosts` | `""` | Server 0.12.3. `DAKERA_ALLOWED_HOSTS`, **required with `authEnabled: false`** when clients use a dotted name (Service FQDN, ingress host): others get 421. Comma list, `*` = any |
+| `dakera.config.neighborhoodEventTime`, `recallCollapseDerived`, `recallExcludeSummaries`, `recallSessionCap`, `sentenceDecomp`, `supersedesEventTime` | `""` (server defaults) | Server 0.12.3: `DAKERA_NEIGHBORHOOD_EVENT_TIME`, `DAKERA_RECALL_COLLAPSE_DERIVED`, `DAKERA_RECALL_EXCLUDE_SUMMARIES`, `DAKERA_RECALL_SESSION_CAP`, `DAKERA_SENTENCE_DECOMP`, `DAKERA_SUPERSEDES_EVENT_TIME` (values.yaml describes each). Rendered only when set: an image up to 0.12.2 would list them as unknown |
 | `dakera.persistence.size` | `20Gi` | PVC size for the data root |
 | `dakera.cluster.secret` / `dakera.cluster.existingSecret.name` | empty | `DAKERA_CLUSTER_SECRET`, stored in a Secret. Required in cluster mode (at least 16 chars, same on every node); see "Cluster mode" |
 | `dakera.extraEnv` | `[]` | Any other `DAKERA_*` setting (Kubernetes EnvVar list), e.g. `DAKERA_MODEL`, `DAKERA_ENCRYPTION_KEY` |
@@ -238,13 +262,16 @@ and `AWS_SECRET_ACCESS_KEY` (= the MinIO password). Not together with `dakera.ro
 | `dakera.resources.limits.memory` | `4Gi` | Memory limit |
 | `dakera.autoscaling.enabled` | `false` | Enable HPA (one server per data root; see values.yaml) |
 | `dakera.autoscaling.maxReplicas` | `5` | HPA max replicas |
-| `dashboard.enabled` | `true` | Deploy the web dashboard (0.5.1). Operators sign in at `/login` with their own API key; the chart gives the dashboard no key. Keep one replica (sessions live in memory) |
+| `dashboard.enabled` | `true` | Deploy the web dashboard (0.5.2). Operators sign in at `/login` with their own API key; the chart gives the dashboard no key. Keep one replica (sessions live in memory) |
 | `dashboard.sessionTtlHours` | `""` | `DAKERA_SESSION_TTL_HOURS`: longest a sign-in lasts (dashboard default 12) |
+| `dashboard.trustedProxies` | `""` | `DAKERA_TRUSTED_PROXIES` (0.5.2): addresses / CIDRs of the proxies in front (e.g. the ingress controller's pod CIDR) whose `X-Forwarded-For` names the client, for the sign-in throttle |
+| `dashboard.securityContext` | uid/gid 10001, read-only root | 0.5.2 runs unprivileged and writes only `/tmp` (an emptyDir). An image up to 0.5.1 needs root (see values.yaml) |
 | `mcp.enabled` | `false` | dakera-mcp speaks MCP over stdio only: as a pod it exits at once (CrashLoopBackOff, measured with 0.10.11). Run it next to the MCP client |
 | `minio.enabled` | `true` | Deploy built-in MinIO (disable to use external S3) |
 | `minio.persistence.size` | `50Gi` | MinIO PVC size |
 | `minio.networkPolicy.enabled` | `true` | Only this release's Dakera pods reach MinIO; `minio.networkPolicy.additionalFrom` adds peers (e.g. a Prometheus that scrapes MinIO) |
 | `ingress.enabled` | `false` | Enable ingress |
+| `ingress.annotations` | `proxy-body-size: 500m` | ingress-nginx refuses bodies over 1m by default; backups, imports and documents (up to 25 MiB) need more |
 | `monitoring.enabled` | `false` | Inert: the chart has no Prometheus / Grafana templates (it never had). Use `monitoring.prometheusRule` and `monitoring.grafanaDashboard` below with your own stack |
 | `monitoring.prometheusRule.enabled` | `false` | The server's v0.12 alert rules as a Prometheus Operator `PrometheusRule` |
 | `monitoring.grafanaDashboard.enabled` | `false` | The server's v0.12 "Dakera Overview" dashboard as a ConfigMap for Grafana's dashboard sidecar |
@@ -279,7 +306,7 @@ ingress:
 
 ### Ingress and load balancers
 
-From the server release after 0.12.2, the REST port closes a keep-alive connection that sends no request head for
+From server 0.12.3, the REST port closes a keep-alive (or HTTP/2) connection that sends no request head for
 `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (default 30 s; slowloris protection). A proxy that keeps idle connections to
 the pods longer than that can send a request on a connection the server has just closed and answer 502.
 ingress-nginx keeps them 60 s by default: set the controller's ConfigMap key `upstream-keepalive-timeout` below
@@ -292,11 +319,11 @@ the pods (e.g. an ALB's idle timeout, 60 s by default: the server's value must b
 The server, its init container and the rollback Job run as uid/gid 1000 with a read-only root filesystem, no
 capability, no privilege escalation and the `RuntimeDefault` seccomp profile; no pod mounts a service-account token
 (nothing in the chart calls the Kubernetes API). The probes are `httpGet` (nothing needed in the image: newer server
-images have no `curl`). The dashboard keeps only the four capabilities its 0.5.1 image (which starts as root) needs.
+images have no `curl`). The dashboard (0.5.2) runs as uid/gid 10001 with a read-only root, a `/tmp` emptyDir and no capability.
 The built-in MinIO is reachable only from this release's Dakera pods (`minio.networkPolicy`). No PodDisruptionBudget
 is rendered: the server is one replica with a `ReadWriteOnce` volume, and a budget would block node drains.
-`POST /ops/shutdown` needs a global `super_admin` key from the server release after 0.12.2; nothing in the chart
-calls it.
+`POST /ops/shutdown` needs a global `super_admin` key from server 0.12.3; nothing in the chart calls it. GPU
+nodes running the CUDA 13 GPU image (0.12.3) need NVIDIA driver R580 or newer.
 
 ## Features in v0.12.0
 
@@ -321,7 +348,7 @@ variables, constraints, sizing and verification per feature, is
 
 ```bash
 # multilingual search on a fresh install (from a clone of this repository, for the example file)
-helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.12.2 -n dakera --create-namespace \
+helm install dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.12.3 -n dakera --create-namespace \
   --set dakera.rootApiKey=$(openssl rand -hex 32) --set minio.rootPassword=$(openssl rand -hex 16) \
   -f examples/values-multilingual.yaml
 # several combinable features: examples/values-combined.yaml (multilingual + multimodal + records + rabitq)
@@ -501,7 +528,7 @@ Ready 25 s after install.
 - Pre-pull before the pod serves: `dakera.models.pull: [configured]` (or a list of names).
 - Keep the cache across pod restarts: `dakera.models.persistence.enabled: true`.
 - Air-gapped: seed that volume from a host that can reach the Hub
-  (`docker run --rm -v <volume>:/app/models ghcr.io/dakera-ai/dakera:0.12.2 models pull --dir /app/models <model>`,
+  (`docker run --rm -v <volume>:/app/models ghcr.io/dakera-ai/dakera:0.12.3 models pull --dir /app/models <model>`,
   then mount it as the PVC), and use only models the image or the volume holds.
   See the server's [models-and-docker.md](https://github.com/Dakera-AI/dakera/blob/main/docs/models-and-docker.md).
 
@@ -599,8 +626,8 @@ helm upgrade dakera oci://ghcr.io/dakera-ai/dakera-helm/dakera --version 0.11.10
   --set dakera.image.tag=0.11.108 <your v0.11 values>
 ```
 
-Run the Job with the **0.12.2 image** (the default: the server's image; leave `rollback.image` empty).
-0.12.2 writes binary RocksDB hot-tier records, and its `dakera downgrade` rewrites them as JSON before
+Run the Job with the **server's image, 0.12.3** (the default; leave `rollback.image` empty).
+0.12.2 and later write binary RocksDB hot-tier records, and their `dakera downgrade` rewrites them as JSON before
 v0.11.108 can read them (report field `hot_tier_records_rewritten_as_json`); an older v0.12 image would not.
 v0.11.108 cannot address namespace names or record ids longer than 200 bytes that 0.12.2 stored (server
 [rollback.md](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/rollback.md), row 23b). Going back

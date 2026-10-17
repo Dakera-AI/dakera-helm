@@ -260,7 +260,10 @@ rendered as an integer, never as 1e+05.
       (list "recallExcludeSummaries" "DAKERA_RECALL_EXCLUDE_SUMMARIES")
       (list "recallSessionCap" "DAKERA_RECALL_SESSION_CAP")
       (list "sentenceDecomp" "DAKERA_SENTENCE_DECOMP")
-      (list "supersedesEventTime" "DAKERA_SUPERSEDES_EVENT_TIME") }}
+      (list "supersedesEventTime" "DAKERA_SUPERSEDES_EVENT_TIME")
+      (list "maxConnections" "DAKERA_MAX_CONNECTIONS")
+      (list "shutdownDrainSecs" "DAKERA_SHUTDOWN_DRAIN_SECS")
+      (list "allowedHosts" "DAKERA_ALLOWED_HOSTS") }}
 {{- $v := index $c (index $pair 0) }}
 {{- if not (kindIs "invalid" $v) }}
 {{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}
@@ -269,6 +272,40 @@ rendered as an integer, never as 1e+05.
 {{- end }}
 {{- end }}
 {{- end }}
+{{- $d := $c.documents | default dict -}}
+{{- range $pair := list
+      (list "enabled" "DAKERA_DOCUMENTS")
+      (list "maxBytes" "DAKERA_DOCUMENT_MAX_BYTES")
+      (list "maxTextBytes" "DAKERA_DOCUMENT_MAX_TEXT_BYTES")
+      (list "maxChunks" "DAKERA_DOCUMENT_MAX_CHUNKS")
+      (list "chunkTokens" "DAKERA_DOCUMENT_CHUNK_TOKENS")
+      (list "chunkOverlapTokens" "DAKERA_DOCUMENT_CHUNK_OVERLAP_TOKENS")
+      (list "extractTimeoutSecs" "DAKERA_DOCUMENT_EXTRACT_TIMEOUT_SECS")
+      (list "extractMemoryMb" "DAKERA_DOCUMENT_EXTRACT_MEMORY_MB")
+      (list "extractConcurrency" "DAKERA_DOCUMENT_EXTRACT_CONCURRENCY") }}
+{{- $v := index $d (index $pair 0) }}
+{{- if not (kindIs "invalid" $v) }}
+{{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}
+{{- if ne (toString $v) "" }}
+{{ index $pair 1 }}: {{ toString $v | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+The pod's grace period must hold the shutdown: up to 15 s for running media jobs, the REST
+drain (dakera.config.shutdownDrainSecs, server default 8) and a margin for the final flushes
+(5 s). Rendered, and so evaluated, by configmap.yaml.
+*/}}
+{{- define "dakera.shutdown.validate" -}}
+{{- $d := .Values.dakera.config.shutdownDrainSecs -}}
+{{- $drain := 8 -}}
+{{- if and (not (kindIs "invalid" $d)) (ne (toString $d) "") -}}{{- $drain = int (toString $d) -}}{{- end -}}
+{{- $grace := int .Values.dakera.terminationGracePeriodSeconds -}}
+{{- if lt $grace (add 15 $drain 5) -}}
+{{- fail (printf "dakera.terminationGracePeriodSeconds (%d) must be at least 15 + shutdownDrainSecs (%d) + 5 = %d: the server waits up to 15 s for media jobs, then drains REST connections, then flushes; a shorter grace period kills it mid-shutdown" $grace $drain (add 15 $drain 5)) -}}
+{{- end -}}
 {{- end }}
 
 {{/* DAKERA_SEARCH_MODE: rabitq when that feature is on, else dakera.config.searchMode. */}}

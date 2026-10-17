@@ -6,12 +6,17 @@
 #   helm install dakera ./charts/dakera --set dakera.replicaCount=3
 
 # ---- Dakera Server ----------------------------------------------------------
-# Chart 0.12.2 deploys Dakera server v0.12.2. For v0.11 use the release/0.11
+# Chart 0.12.3 deploys Dakera server v0.12.3. For v0.11 use the release/0.11
 # branch or a 0.11.x chart version (see README, "Versions").
 dakera:
   image:
     repository: ghcr.io/dakera-ai/dakera
-    tag: ""  # defaults to the chart appVersion
+    # Defaults to the chart appVersion. The image is distroless from 0.12.3: uid/gid 1000,
+    # /bin/sh only (no curl, wget or coreutils); probes are httpGet. The GPU image
+    # (tag `gpu` / `cuda`, or <version>-gpu) is built on CUDA 13 from 0.12.3: the nodes need
+    # NVIDIA driver R580 or newer (and the NVIDIA device plugin; request nvidia.com/gpu in
+    # dakera.resources).
+    tag: ""
     pullPolicy: IfNotPresent
 
   replicaCount: 1
@@ -82,18 +87,19 @@ dakera:
     # 0.12.2 default: raw float embeddings, about a third of the bytes, faster decode) or
     # json (the pre-0.12.2 writer). Both are always read, so it can change at any restart.
     # json is not needed to roll back: 0.12.0 / 0.12.1 read binary records, and the rollback
-    # Job (dakera downgrade, 0.12.2 image) rewrites them as JSON for v0.11.108.
+    # Job (dakera downgrade, the server's image) rewrites them as JSON for v0.11.108.
     #   rocksdbRecordFormat: binary
     rocksdbRecordFormat: ""
 
-    # ---- Settings of server releases after 0.12.2: optional, rendered only when set ----------
-    # A 0.12.2 image does not know these names (it lists them as unknown configuration):
-    # set them only with an image that does. Strings; checked by values.schema.json.
+    # ---- Server 0.12.3 settings: optional, rendered only when set -------------------------
+    # An image up to 0.12.2 does not know these names (it lists them as unknown
+    # configuration): set them only with 0.12.3 or later. Strings; checked by values.schema.json.
     #
     # DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS: seconds a client has to send a complete HTTP/1
     # request head on the REST port, counted from when the server waits for one: a new
     # connection, or an IDLE KEEP-ALIVE one, which is closed after this long. Server default
-    # 30, [1, 86400]. A proxy that keeps idle connections to the pods longer than this
+    # 30, [1, 86400]; it also closes an HTTP/2 connection that sends no request. A proxy
+    # that keeps idle connections to the pods longer than this
     # (ingress-nginx: upstream-keepalive-timeout, 60 s by default; cloud load balancers) can
     # send a request on a connection the server has just closed (502): keep the proxy's idle
     # timeout below this value, or raise this above it (README, "Ingress and load balancers").
@@ -124,6 +130,42 @@ dakera:
     # DAKERA_SUPERSEDES_EVENT_TIME: "false" = Supersedes edges ordered by created_at only
     # (default on: by the memories' event dates when both carry one).
     supersedesEventTime: ""
+    # DAKERA_MAX_CONNECTIONS: most open REST connections, 1-1000000 (default 10000); one
+    # over the cap is closed at once.
+    maxConnections: ""
+    # DAKERA_SHUTDOWN_DRAIN_SECS: longest REST drain at shutdown, 0-3600 (default 8; SSE
+    # streams end at the signal). The server first waits up to 15 s for running media jobs:
+    # the chart refuses a value with which 15 + this + 5 s would not fit in
+    # dakera.terminationGracePeriodSeconds.
+    shutdownDrainSecs: ""
+    # DAKERA_ALLOWED_HOSTS: read ONLY with authEnabled: false. A request whose Host is not
+    # localhost / *.localhost / an IP / a single-label name (the Service name) or listed
+    # here gets 421 HOST_NOT_ALLOWED (DNS-rebinding guard; /health* and /internal/* are
+    # exempt). Without authentication, list every dotted name clients use: the Service FQDN
+    # (<fullname>.<namespace>.svc.cluster.local) and the ingress host. Comma separated; "*" = any.
+    #   allowedHosts: "dakera.dakera.svc.cluster.local,api.dakera.example.com"
+    allowedHosts: ""
+
+    # Document import (server 0.12.3, on by default; server docs/documents.md):
+    # POST /v1/memory/documents (text, Markdown, HTML) and
+    # POST /v1/namespaces/{ns}/attachments/{ref}/document (PDF, DOCX, ...; needs the attachment
+    # lane, dakera.features.multimodal). Each value is rendered only when set.
+    # Memory: PDF / DOCX are parsed in `dakera extract-text` child processes, up to
+    # extractConcurrency x extractMemoryMb (2 x 1024 MB by default) on top of the server, inside
+    # the container's memory limit (dakera.resources, 4Gi by default). For PDF-heavy imports
+    # raise the limit (6Gi) or set extractConcurrency "1".
+    # Body size: an upload is up to maxBytes (25 MiB): an ingress in front must accept it
+    # (ingress.annotations sets ingress-nginx's proxy-body-size; its own default is 1m).
+    documents:
+      enabled: ""             # DAKERA_DOCUMENTS: "false" = 501 FEATURE_DISABLED
+      maxBytes: ""            # DAKERA_DOCUMENT_MAX_BYTES, default 26214400 (25 MiB)
+      maxTextBytes: ""        # DAKERA_DOCUMENT_MAX_TEXT_BYTES, default 20971520 (20 MiB)
+      maxChunks: ""           # DAKERA_DOCUMENT_MAX_CHUNKS, default 5000
+      chunkTokens: ""         # DAKERA_DOCUMENT_CHUNK_TOKENS, default 400, 32-8192
+      chunkOverlapTokens: ""  # DAKERA_DOCUMENT_CHUNK_OVERLAP_TOKENS, default 50, 0-1024
+      extractTimeoutSecs: ""  # DAKERA_DOCUMENT_EXTRACT_TIMEOUT_SECS, default 60
+      extractMemoryMb: ""     # DAKERA_DOCUMENT_EXTRACT_MEMORY_MB, default 1024 (per child)
+      extractConcurrency: ""  # DAKERA_DOCUMENT_EXTRACT_CONCURRENCY, default 2
 
   # Root API key — REQUIRED, one of two ways:
   #   rootApiKey:     the chart stores it (and the MinIO credentials) in <release>-secrets;
@@ -156,7 +198,7 @@ dakera:
   # the chart sets from `config` above. Standard Kubernetes EnvVar list: each item
   # is {name, value} or {name, valueFrom}. Do not repeat a name the chart already
   # sets (DAKERA_HOST/PORT/GRPC_PORT/STORAGE/STORAGE_PATH/S3_*/AUTH_ENABLED/
-  # TIERED*/SEARCH_MODE/..., RUST_LOG; the 0.12.2 settings in `config` when set: an
+  # TIERED*/SEARCH_MODE/..., RUST_LOG; the 0.12.2 / 0.12.3 settings in `config` when set: an
   # extraEnv entry wins over the ConfigMap). DAKERA_DATA_DIR is an alias of
   # DAKERA_STORAGE_PATH: do not set it. Values must be strings.
   #
@@ -339,7 +381,8 @@ dakera:
 
   # Root filesystem read-only (the default). Everything the server writes is on a volume:
   # the data root (the PVC, or an emptyDir with persistence.enabled=false), the model
-  # cache and /tmp. Measured with server 0.12.2: store, recall and backups work.
+  # cache and /tmp. Measured with server 0.12.2: store, recall and backups work (0.12.3's
+  # distroless image writes the same paths).
   readOnlyRootFilesystem: true
 
   resources:
@@ -370,6 +413,10 @@ dakera:
   probes:
     timeoutSeconds: 5
 
+  # SIGTERM: up to 15 s for running media jobs, then the REST drain
+  # (config.shutdownDrainSecs, 8 s by default), then the final flushes.
+  terminationGracePeriodSeconds: 30
+
 # ---- Rollback to v0.11 -------------------------------------------------------
 # `dakera downgrade` makes the data v0.11.108's again. It is a one-off Job that
 # must run AFTER the server has stopped. It is not rendered unless enabled; see
@@ -378,13 +425,13 @@ dakera:
 #   helm template <release> ./charts/dakera <your values> \
 #     --set rollback.enabled=true --show-only templates/rollback-job.yaml \
 #     | kubectl apply -f -
-# The Job must run with the image of the version being rolled back, 0.12.2 (the default):
-# 0.12.2 writes binary RocksDB hot-tier records, and its `dakera downgrade` rewrites them
+# The Job must run with the image of the version being rolled back, 0.12.3 (the default):
+# 0.12.2 and later write binary RocksDB hot-tier records, and their `dakera downgrade` rewrites them
 # as JSON before v0.11.108 can read them (report field hot_tier_records_rewritten_as_json).
 # A 0.12.0 / 0.12.1 image would not. Rolling back to 0.12.0 / 0.12.1 needs no Job.
 rollback:
   enabled: false
-  # Image that runs `downgrade`: leave empty (the server's image, 0.12.2). Never an older
+  # Image that runs `downgrade`: leave empty (the server's image, 0.12.3). Never an older
   # v0.12 image after 0.12.2 has run on the data (see above).
   image: ""
   ttlSecondsAfterFinished: 86400
@@ -397,23 +444,35 @@ dashboard:
   enabled: true
   image:
     repository: ghcr.io/dakera-ai/dakera-dashboard
-    tag: "0.5.1"
+    tag: "0.5.2"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
+
+  # Addresses / CIDRs (comma or space separated) of the reverse proxies in front of the
+  # dashboard whose X-Forwarded-For names the client (DAKERA_TRUSTED_PROXIES, dashboard
+  # 0.5.2; nginx real_ip): the sign-in throttle then counts the real client. Typically the
+  # ingress controller's pod CIDR. Empty: the connecting peer is the client (behind a proxy,
+  # every user shares the proxy's address and one person's typos throttle everyone).
+  #   trustedProxies: "10.244.0.0/16"
+  trustedProxies: ""
 
   # Longest a sign-in lasts, in hours (dashboard default 12; 15 minutes to 7 days).
   # Idle sessions end after 2 hours. Empty: the dashboard's default.
   sessionTtlHours: ""
 
-  # Dashboard images up to 0.5.1 start as root (nginx and the session service then drop
-  # to their own users): only the capabilities that needs, measured with 0.5.1. A non-root
-  # dashboard image needs none of them (set add: []).
+  # Dashboard 0.5.2 runs as uid/gid 10001 and writes only /tmp: with readOnlyRootFilesystem
+  # the chart mounts an emptyDir there. An image up to 0.5.1 starts as root and edits its
+  # nginx configuration: it needs runAsNonRoot false, runAsUser 0, readOnlyRootFilesystem
+  # false and capabilities.add [CHOWN, DAC_OVERRIDE, SETGID, SETUID].
   securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
     allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
     capabilities:
       drop: [ALL]
-      add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
 
   resources:
     requests:
@@ -506,7 +565,11 @@ ingress:
   # apiHost: api.dakera.yourdomain.com
   # dashboardHost: dashboard.dakera.yourdomain.com
   # mcpHost: mcp.dakera.yourdomain.com
-  annotations: {}
+  # proxy-body-size: ingress-nginx refuses bodies over 1m by default; backups, imports,
+  # attachments and documents (up to 25 MiB) need more. Matches dakera.config.maxBodySize.
+  # Other controllers have their own setting. Annotations you set are merged with this one.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "500m"
     # cert-manager.io/cluster-issuer: letsencrypt-prod
     # nginx.ingress.kubernetes.io/ssl-redirect: "true"
   tls: []

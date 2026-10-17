@@ -2,8 +2,8 @@ apiVersion: v2
 name: dakera
 description: Dakera — AI agent memory platform
 type: application
-version: 0.12.2
-appVersion: "0.12.2"
+version: 0.12.3
+appVersion: "0.12.3"
 keywords:
   - agent-memory
   - ai-memory
@@ -20,21 +20,23 @@ icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo
 annotations:
   artifacthub.io/images: |
     - name: dakera
-      image: ghcr.io/dakera-ai/dakera:0.12.2
+      image: ghcr.io/dakera-ai/dakera:0.12.3
     - name: dakera-dashboard
-      image: ghcr.io/dakera-ai/dakera-dashboard:0.5.1
+      image: ghcr.io/dakera-ai/dakera-dashboard:0.5.2
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: Dakera server 0.12.2 (chart 0.12.2); the image tag follows appVersion. Dashboard 0.5.0 -> 0.5.1 (add agent, in-place key edits, rotation grace, session auto-end labels; works with 0.12.0 and 0.12.1 too)
-    - kind: changed
-      description: Server 0.12.2 ends sessions after 4 h without activity by default (DAKERA_SESSION_IDLE_TIMEOUT_SECS); sessions already idle longer are closed, with their summaries, on the first passes after the upgrade. New optional dakera.config.sessionIdleTimeoutSecs ("0" = the server ends no session by itself)
+      description: Dakera server 0.12.3 (chart 0.12.3; the image tag follows appVersion) and Dashboard 0.5.1 -> 0.5.2 (runs as uid/gid 10001, no curl, read-only root with a /tmp emptyDir; new optional dashboard.trustedProxies, DAKERA_TRUSTED_PROXIES)
+    - kind: security
+      description: Server image distroless (uid/gid 1000, no curl or shell tools; probes stay httpGet). POST /ops/shutdown needs a global super_admin key; four admin routes refuse unknown JSON fields (422). The GPU image is CUDA 13 and needs NVIDIA driver R580+
+    - kind: security
+      description: Read-only root filesystem by default, RuntimeDefault seccomp and no service-account token on every pod; MinIO reachable only from the release's Dakera pods (minio.networkPolicy, on by default); dakera.existingSecret
     - kind: added
-      description: Optional dakera.config.maxMemoryContentBytes (DAKERA_MAX_MEMORY_CONTENT_BYTES, default 100000 bytes), vectorCacheBytes (DAKERA_VECTOR_CACHE_BYTES, the L1 vector cache, default 128MB; not l1CacheSize) and rocksdbRecordFormat (DAKERA_ROCKSDB_RECORD_FORMAT, binary default | json); rendered only when set, checked by values.schema.json
+      description: Optional server 0.12.3 settings rendered only when set - httpHeaderReadTimeoutSecs (also closes idle keep-alive connections - keep proxy idle timeouts shorter), maxConnections, shutdownDrainSecs (checked against dakera.terminationGracePeriodSeconds), allowedHosts (required with authentication off and a dotted Host name, else 421), and the recall settings neighborhoodMode, recallRankDepth, recallCollapseDerived, recallExcludeSummaries, recallSessionCap, neighborhoodEventTime, sentenceDecomp, supersedesEventTime
+    - kind: added
+      description: Document import settings (dakera.config.documents.* - DAKERA_DOCUMENTS, DAKERA_DOCUMENT_*); extraction uses up to 2 x 1024 MB on top of the server inside the memory limit. ingress.annotations defaults to proxy-body-size 500m (ingress-nginx's 1m refused uploads)
     - kind: changed
-      description: Server 0.12.2 validates more strictly (400 for reserved dakera-curated / _dakera_* markers, mem_s ids, agent ids over 241 bytes, memory-shaped writes through raw vector routes, content over the byte limit on update); keys gain prefix patterns p*, and pre-0.12.2 entries ending in * stay inert until the key is saved again
-    - kind: changed
-      description: Rollback to v0.11.108 must run dakera downgrade with the 0.12.2 image (the rollback Job's default), which rewrites the binary RocksDB hot-tier records 0.12.2 writes as JSON. Rolling back to 0.12.0 / 0.12.1 needs nothing
+      description: Server probes get timeoutSeconds 5; a published chart version is never re-pushed to the OCI registry
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub

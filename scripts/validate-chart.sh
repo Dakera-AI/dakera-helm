@@ -51,10 +51,10 @@ for kv in 'DAKERA_SESSION_IDLE_TIMEOUT_SECS: "14400"' 'DAKERA_VECTOR_CACHE_BYTES
   grep -qF "$kv" /tmp/chart-opt.yaml || { echo "FAIL: $kv not rendered from a values file"; fail=1; }
 done
 
-echo "== settings of server releases after 0.12.2: left out unless set, rendered when set"
+echo "== server 0.12.3 settings: left out unless set, rendered when set"
 LATER_VARS="DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS DAKERA_NEIGHBORHOOD_MODE DAKERA_NEIGHBORHOOD_EVENT_TIME DAKERA_RECALL_RANK_DEPTH
   DAKERA_RECALL_COLLAPSE_DERIVED DAKERA_RECALL_EXCLUDE_SUMMARIES DAKERA_RECALL_SESSION_CAP DAKERA_SENTENCE_DECOMP
-  DAKERA_SUPERSEDES_EVENT_TIME"
+  DAKERA_SUPERSEDES_EVENT_TIME DAKERA_MAX_CONNECTIONS DAKERA_SHUTDOWN_DRAIN_SECS DAKERA_ALLOWED_HOSTS"
 for v in $LATER_VARS; do
   if grep -q "$v" /tmp/chart-default.yaml; then echo "FAIL: $v rendered while unset (a 0.12.2 image would report it)"; fail=1; fi
 done
@@ -62,13 +62,15 @@ NEW=(--set-string dakera.config.httpHeaderReadTimeoutSecs=75 --set dakera.config
      --set dakera.config.neighborhoodEventTime=true --set-string dakera.config.recallRankDepth=20
      --set dakera.config.recallCollapseDerived=true --set dakera.config.recallExcludeSummaries=true
      --set-string dakera.config.recallSessionCap=0 --set dakera.config.sentenceDecomp=false
-     --set-string dakera.config.supersedesEventTime=0)
+     --set-string dakera.config.supersedesEventTime=0 --set-string dakera.config.maxConnections=20000
+     --set-string dakera.config.shutdownDrainSecs=10 --set dakera.config.allowedHosts=dakera.example.test)
 "$HELM" lint "$CHART" "${REQ[@]}" "${NEW[@]}"
 "$HELM" template r "$CHART" "${REQ[@]}" "${NEW[@]}" --show-only templates/configmap.yaml > /tmp/chart-new.yaml
 for kv in 'DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS: "75"' 'DAKERA_NEIGHBORHOOD_MODE: "separate"' \
           'DAKERA_NEIGHBORHOOD_EVENT_TIME: "true"' 'DAKERA_RECALL_RANK_DEPTH: "20"' 'DAKERA_RECALL_COLLAPSE_DERIVED: "true"' \
           'DAKERA_RECALL_EXCLUDE_SUMMARIES: "true"' 'DAKERA_RECALL_SESSION_CAP: "0"' 'DAKERA_SENTENCE_DECOMP: "false"' \
-          'DAKERA_SUPERSEDES_EVENT_TIME: "0"'; do
+          'DAKERA_SUPERSEDES_EVENT_TIME: "0"' 'DAKERA_MAX_CONNECTIONS: "20000"' 'DAKERA_SHUTDOWN_DRAIN_SECS: "10"' \
+          'DAKERA_ALLOWED_HOSTS: "dakera.example.test"'; do
   grep -qF "$kv" /tmp/chart-new.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
 done
 
@@ -83,6 +85,31 @@ grep -q '^kind: NetworkPolicy' /tmp/chart-default.yaml || { echo "FAIL: MinIO Ne
 if "$HELM" template r "$CHART" "${REQ[@]}" --set minio.enabled=false --set dakera.config.s3Endpoint=https://s3.example.test | grep -q '^kind: NetworkPolicy'; then
   echo "FAIL: NetworkPolicy rendered without the built-in MinIO"; fail=1
 fi
+echo "== document import: rendered when set, left out by default; ingress accepts 25 MiB bodies"
+grep -q 'DAKERA_DOCUMENT' /tmp/chart-default.yaml && { echo "FAIL: a DAKERA_DOCUMENT* variable rendered while unset"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.documents.enabled=false --set-string dakera.config.documents.maxBytes=52428800 \
+  --set-string dakera.config.documents.chunkTokens=512 --set-string dakera.config.documents.extractConcurrency=1 \
+  --show-only templates/configmap.yaml > /tmp/chart-docs.yaml
+for kv in 'DAKERA_DOCUMENTS: "false"' 'DAKERA_DOCUMENT_MAX_BYTES: "52428800"' 'DAKERA_DOCUMENT_CHUNK_TOKENS: "512"' \
+          'DAKERA_DOCUMENT_EXTRACT_CONCURRENCY: "1"'; do
+  grep -qF "$kv" /tmp/chart-docs.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
+done
+"$HELM" template r "$CHART" "${REQ[@]}" --set ingress.enabled=true --set ingress.apiHost=a.example.test --show-only templates/ingress.yaml \
+  | grep -qF 'nginx.ingress.kubernetes.io/proxy-body-size: 500m' || { echo "FAIL: ingress without proxy-body-size"; fail=1; }
+
+echo "== dashboard 0.5.2: uid 10001, read-only root with a /tmp emptyDir, trusted proxies when set"
+dashdep=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/' /tmp/chart-default.yaml)
+for want in 'runAsUser: 10001' 'readOnlyRootFilesystem: true' 'mountPath: /tmp' 'emptyDir: {}'; do
+  printf '%s' "$dashdep" | grep -qF "$want" || { echo "FAIL: dashboard: $want missing"; fail=1; }
+done
+printf '%s' "$dashdep" | grep -q 'DAKERA_TRUSTED_PROXIES' && { echo "FAIL: DAKERA_TRUSTED_PROXIES rendered while unset"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set dashboard.trustedProxies='10.0.0.0/8 172.16.0.0/12' \
+  | grep -A1 'name: DAKERA_TRUSTED_PROXIES' | grep -qF '"10.0.0.0/8 172.16.0.0/12"' || { echo "FAIL: trustedProxies not rendered"; fail=1; }
+echo "== grace period follows terminationGracePeriodSeconds; a long drain needs a longer one"
+printf '%s' "$server" | grep -q 'terminationGracePeriodSeconds: 30' || { echo "FAIL: server grace period not 30"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set-string dakera.config.shutdownDrainSecs=60 --set dakera.terminationGracePeriodSeconds=80 > /dev/null \
+  || { echo "FAIL: drain 60 with grace 80 refused"; fail=1; }
+
 echo "== persistence off: the data root is an emptyDir (writable with the read-only root)"
 "$HELM" template r "$CHART" "${REQ[@]}" --set dakera.persistence.enabled=false --show-only templates/deployment.yaml \
   | awk 'BEGIN{RS="\n---\n"} /component: server/' | grep -A2 -- '- name: data$' | grep -q 'emptyDir' \
@@ -122,6 +149,16 @@ expect_refusal "rank depth 0"                           --set-string dakera.conf
 expect_refusal "rank depth over 1000"                   --set-string dakera.config.recallRankDepth=1001
 expect_refusal "flag not a boolean"                     --set dakera.config.sentenceDecomp=maybe
 expect_refusal "rootApiKey and existingSecret"          --set dakera.existingSecret=mine
+expect_refusal "drain longer than the grace period"     --set-string dakera.config.shutdownDrainSecs=60
+expect_refusal "drain over an hour"                     --set-string dakera.config.shutdownDrainSecs=3601 --set dakera.terminationGracePeriodSeconds=4000
+expect_refusal "max connections 0"                      --set-string dakera.config.maxConnections=0
+expect_refusal "allowed hosts with blanks"              --set-string 'dakera.config.allowedHosts=a.example b.example'
+expect_refusal "document chunk tokens over 8192"        --set-string dakera.config.documents.chunkTokens=9000
+expect_refusal "document chunk tokens under 32"         --set-string dakera.config.documents.chunkTokens=16
+expect_refusal "document overlap over 1024"             --set-string dakera.config.documents.chunkOverlapTokens=2000
+expect_refusal "document extraction concurrency 0"      --set-string dakera.config.documents.extractConcurrency=0
+expect_refusal "unknown document setting"               --set dakera.config.documents.maxPages=10
+expect_refusal "trusted proxies not addresses"          --set 'dashboard.trustedProxies=10.0.0.0/8;evil'
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
 expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
 # Server 0.12.1: a cluster node without DAKERA_CLUSTER_SECRET exits with code 78.
