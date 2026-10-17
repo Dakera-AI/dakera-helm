@@ -86,8 +86,53 @@ dakera:
     #   rocksdbRecordFormat: binary
     rocksdbRecordFormat: ""
 
-  # Root API key — REQUIRED. Set via --set or external secret.
+    # ---- Settings of server releases after 0.12.2: optional, rendered only when set ----------
+    # A 0.12.2 image does not know these names (it lists them as unknown configuration):
+    # set them only with an image that does. Strings; checked by values.schema.json.
+    #
+    # DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS: seconds a client has to send a complete HTTP/1
+    # request head on the REST port, counted from when the server waits for one: a new
+    # connection, or an IDLE KEEP-ALIVE one, which is closed after this long. Server default
+    # 30, [1, 86400]. A proxy that keeps idle connections to the pods longer than this
+    # (ingress-nginx: upstream-keepalive-timeout, 60 s by default; cloud load balancers) can
+    # send a request on a connection the server has just closed (502): keep the proxy's idle
+    # timeout below this value, or raise this above it (README, "Ingress and load balancers").
+    #   httpHeaderReadTimeoutSecs: "30"
+    httpHeaderReadTimeoutSecs: ""
+    # Recall (POST /v1/memory/recall). Empty = the server's default.
+    # DAKERA_NEIGHBORHOOD_MODE: inline (default: neighbourhood context after the top_k
+    # results, marked retrieval: "neighborhood") | separate (in context_memories, so memories
+    # holds at most top_k) | off. A request's neighborhood_mode wins.
+    neighborhoodMode: ""
+    # DAKERA_NEIGHBORHOOD_EVENT_TIME: "true" = neighbourhood window on event time (default off).
+    neighborhoodEventTime: ""
+    # DAKERA_RECALL_RANK_DEPTH: ranking depth floor, 1-1000 (default 10): the first k results
+    # of a top_k=k recall are the first k of a top_k=10 recall for k <= it.
+    recallRankDepth: ""
+    # DAKERA_RECALL_COLLAPSE_DERIVED: "true" = one result per source memory, derived sentence
+    # sub-memories collapsed into it (matched_text, matched_ids). Default off.
+    recallCollapseDerived: ""
+    # DAKERA_RECALL_EXCLUDE_SUMMARIES: "true" = session summaries left out of recall unless a
+    # request sets include_summaries (default off).
+    recallExcludeSummaries: ""
+    # DAKERA_RECALL_SESSION_CAP: at most N results of one session in the head of list /
+    # aggregation recalls; "0" (default) = no cap.
+    recallSessionCap: ""
+    # DAKERA_SENTENCE_DECOMP: "false" = no sentence sub-memories derived on any write path
+    # (default on).
+    sentenceDecomp: ""
+    # DAKERA_SUPERSEDES_EVENT_TIME: "false" = Supersedes edges ordered by created_at only
+    # (default on: by the memories' event dates when both carry one).
+    supersedesEventTime: ""
+
+  # Root API key — REQUIRED, one of two ways:
+  #   rootApiKey:     the chart stores it (and the MinIO credentials) in <release>-secrets;
+  #   existingSecret: the name of a Secret you manage, with the same keys
+  #                   (DAKERA_ROOT_API_KEY; with the built-in MinIO also MINIO_ROOT_PASSWORD,
+  #                   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY). Nothing secret in the values.
+  # Neither: create <release>-secrets yourself (the chart prints the command).
   # rootApiKey: ""
+  existingSecret: ""
 
   # Cluster mode (DAKERA_CLUSTER_MODE=true, set through extraEnv) needs
   # DAKERA_CLUSTER_SECRET: at least 16 characters, the same on every node. From
@@ -289,11 +334,13 @@ dakera:
     runAsGroup: 1000
     fsGroup: 1000
     fsGroupChangePolicy: OnRootMismatch
+    seccompProfile:
+      type: RuntimeDefault
 
-  # Root filesystem read-only. Everything the server writes is on a volume (the
-  # data root, the model cache, /tmp); turn persistence off only together with
-  # this off.
-  readOnlyRootFilesystem: false
+  # Root filesystem read-only (the default). Everything the server writes is on a volume:
+  # the data root (the PVC, or an emptyDir with persistence.enabled=false), the model
+  # cache and /tmp. Measured with server 0.12.2: store, recall and backups work.
+  readOnlyRootFilesystem: true
 
   resources:
     requests:
@@ -317,6 +364,11 @@ dakera:
     type: ClusterIP
     httpPort: 3000
     grpcPort: 50051
+
+  # Probe timeouts (seconds). The probes are httpGet: they need nothing in the image (no
+  # curl, no shell). Kubernetes' default of 1 s fails a busy server.
+  probes:
+    timeoutSeconds: 5
 
 # ---- Rollback to v0.11 -------------------------------------------------------
 # `dakera downgrade` makes the data v0.11.108's again. It is a one-off Job that
@@ -353,6 +405,15 @@ dashboard:
   # Longest a sign-in lasts, in hours (dashboard default 12; 15 minutes to 7 days).
   # Idle sessions end after 2 hours. Empty: the dashboard's default.
   sessionTtlHours: ""
+
+  # Dashboard images up to 0.5.1 start as root (nginx and the session service then drop
+  # to their own users): only the capabilities that needs, measured with 0.5.1. A non-root
+  # dashboard image needs none of them (set add: []).
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: [ALL]
+      add: [CHOWN, DAC_OVERRIDE, SETGID, SETUID]
 
   resources:
     requests:
@@ -406,9 +467,17 @@ minio:
     tag: latest
     pullPolicy: IfNotPresent
 
-  # Credentials — override via --set or external secret
+  # Credentials — override via --set, or keep them in dakera.existingSecret
   rootUser: dakera-minio  # override with a non-default username to reduce attack surface
-  rootPassword: ""  # REQUIRED — set before deploying
+  rootPassword: ""  # REQUIRED with dakera.rootApiKey (the chart's Secret); else in your Secret
+
+  # Only the Dakera pods of this release (server, init container, rollback Job) reach
+  # MinIO's API. Enforced by network plugins that implement NetworkPolicy; elsewhere it has
+  # no effect. `additionalFrom`: more NetworkPolicyPeer entries allowed on ports 9000/9001
+  # (e.g. your Prometheus scraping /minio/v2/metrics/cluster). kubectl port-forward still works.
+  networkPolicy:
+    enabled: true
+    additionalFrom: []
 
   persistence:
     size: 50Gi

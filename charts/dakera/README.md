@@ -199,8 +199,12 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 
 | Key | Description |
 |---|---|
-| `dakera.rootApiKey` | Root API key for Dakera. **Required.** |
-| `minio.rootPassword` | MinIO root password for S3-compatible object storage. **Required.** |
+| `dakera.rootApiKey` | Root API key for Dakera. **Required**, unless `dakera.existingSecret` names a Secret that holds it. |
+| `minio.rootPassword` | MinIO root password for S3-compatible object storage. **Required** with `dakera.rootApiKey` (the chart's Secret); with `dakera.existingSecret` it is that Secret's `MINIO_ROOT_PASSWORD`. |
+
+Or keep every secret out of the values: `--set dakera.existingSecret=<name>`, a Secret you manage with
+`DAKERA_ROOT_API_KEY` and, with the built-in MinIO, `MINIO_ROOT_PASSWORD`, `AWS_ACCESS_KEY_ID` (= `minio.rootUser`)
+and `AWS_SECRET_ACCESS_KEY` (= the MinIO password). Not together with `dakera.rootApiKey`.
 
 ### Common Options
 
@@ -215,6 +219,10 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `dakera.config.maxMemoryContentBytes` | `""` (server: `100000`) | `DAKERA_MAX_MEMORY_CONTENT_BYTES`: longest memory content in UTF-8 **bytes** (integer > 0) |
 | `dakera.config.vectorCacheBytes` | `""` (server: `128MB`) | `DAKERA_VECTOR_CACHE_BYTES`: the in-process L1 **vector** cache, a byte size (`256MB`). Not `l1CacheSize` |
 | `dakera.config.rocksdbRecordFormat` | `""` (server: `binary`) | `DAKERA_ROCKSDB_RECORD_FORMAT`: how the RocksDB hot tier writes new records, `binary` or `json` (both always read) |
+| `dakera.config.httpHeaderReadTimeoutSecs` | `""` (server: `30`) | Server releases after 0.12.2. `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS`: seconds a client has to send a request head; an idle keep-alive connection is closed after it. 1 to 86400. See "Ingress and load balancers" |
+| `dakera.config.neighborhoodMode` | `""` (server: `inline`) | Server releases after 0.12.2. `DAKERA_NEIGHBORHOOD_MODE`: default neighbourhood context of a recall, `inline`, `separate` (in `context_memories`) or `off` |
+| `dakera.config.recallRankDepth` | `""` (server: `10`) | Server releases after 0.12.2. `DAKERA_RECALL_RANK_DEPTH`: ranking depth floor, 1 to 1000 |
+| `dakera.config.neighborhoodEventTime`, `recallCollapseDerived`, `recallExcludeSummaries`, `recallSessionCap`, `sentenceDecomp`, `supersedesEventTime` | `""` (server defaults) | Server releases after 0.12.2: `DAKERA_NEIGHBORHOOD_EVENT_TIME`, `DAKERA_RECALL_COLLAPSE_DERIVED`, `DAKERA_RECALL_EXCLUDE_SUMMARIES`, `DAKERA_RECALL_SESSION_CAP`, `DAKERA_SENTENCE_DECOMP`, `DAKERA_SUPERSEDES_EVENT_TIME` (values.yaml describes each). Rendered only when set: a 0.12.2 image would list them as unknown |
 | `dakera.persistence.size` | `20Gi` | PVC size for the data root |
 | `dakera.cluster.secret` / `dakera.cluster.existingSecret.name` | empty | `DAKERA_CLUSTER_SECRET`, stored in a Secret. Required in cluster mode (at least 16 chars, same on every node); see "Cluster mode" |
 | `dakera.extraEnv` | `[]` | Any other `DAKERA_*` setting (Kubernetes EnvVar list), e.g. `DAKERA_MODEL`, `DAKERA_ENCRYPTION_KEY` |
@@ -222,6 +230,9 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `dakera.models.persistence.enabled` | `false` | Keep the model cache (`/app/models`) on a PVC (on automatically while a v0.12 feature that needs models is enabled) |
 | `dakera.features.*` | all off | The v0.12 features: multilingual, multimodal, vision, records, lateInteraction, rabitq (see "Features in v0.12.0") |
 | `dakera.podSecurityContext.fsGroup` | `1000` | Group that owns the mounted volumes (the image runs as uid/gid 1000) |
+| `dakera.readOnlyRootFilesystem` | `true` | Read-only root filesystem for the server, its init container and the rollback Job (the data root, the model cache and `/tmp` are volumes) |
+| `dakera.probes.timeoutSeconds` | `5` | Timeout of the server's `httpGet` probes |
+| `dakera.existingSecret` | `""` | A Secret you manage, used instead of `<release>-secrets` (see "Required Values") |
 | `rollback.enabled` | `false` | Render the one-off `dakera downgrade` Job (see "Rolling back to v0.11") |
 | `dakera.resources.requests.memory` | `512Mi` | Memory request |
 | `dakera.resources.limits.memory` | `4Gi` | Memory limit |
@@ -232,6 +243,7 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `mcp.enabled` | `false` | dakera-mcp speaks MCP over stdio only: as a pod it exits at once (CrashLoopBackOff, measured with 0.10.11). Run it next to the MCP client |
 | `minio.enabled` | `true` | Deploy built-in MinIO (disable to use external S3) |
 | `minio.persistence.size` | `50Gi` | MinIO PVC size |
+| `minio.networkPolicy.enabled` | `true` | Only this release's Dakera pods reach MinIO; `minio.networkPolicy.additionalFrom` adds peers (e.g. a Prometheus that scrapes MinIO) |
 | `ingress.enabled` | `false` | Enable ingress |
 | `monitoring.enabled` | `false` | Inert: the chart has no Prometheus / Grafana templates (it never had). Use `monitoring.prometheusRule` and `monitoring.grafanaDashboard` below with your own stack |
 | `monitoring.prometheusRule.enabled` | `false` | The server's v0.12 alert rules as a Prometheus Operator `PrometheusRule` |
@@ -264,6 +276,27 @@ ingress:
       hosts:
         - api.dakera.yourdomain.com
 ```
+
+### Ingress and load balancers
+
+From the server release after 0.12.2, the REST port closes a keep-alive connection that sends no request head for
+`DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (default 30 s; slowloris protection). A proxy that keeps idle connections to
+the pods longer than that can send a request on a connection the server has just closed and answer 502.
+ingress-nginx keeps them 60 s by default: set the controller's ConfigMap key `upstream-keepalive-timeout` below
+the server's value (e.g. `"25"`; it cannot be set per Ingress), or raise `dakera.config.httpHeaderReadTimeoutSecs`
+above the proxy's idle timeout (e.g. `"75"`). The same holds for a cloud load balancer that pools connections to
+the pods (e.g. an ALB's idle timeout, 60 s by default: the server's value must be the larger one).
+
+### Security defaults
+
+The server, its init container and the rollback Job run as uid/gid 1000 with a read-only root filesystem, no
+capability, no privilege escalation and the `RuntimeDefault` seccomp profile; no pod mounts a service-account token
+(nothing in the chart calls the Kubernetes API). The probes are `httpGet` (nothing needed in the image: newer server
+images have no `curl`). The dashboard keeps only the four capabilities its 0.5.1 image (which starts as root) needs.
+The built-in MinIO is reachable only from this release's Dakera pods (`minio.networkPolicy`). No PodDisruptionBudget
+is rendered: the server is one replica with a `ReadWriteOnce` volume, and a budget would block node drains.
+`POST /ops/shutdown` needs a global `super_admin` key from the server release after 0.12.2; nothing in the chart
+calls it.
 
 ## Features in v0.12.0
 

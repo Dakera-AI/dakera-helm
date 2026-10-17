@@ -155,8 +155,8 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 
 | Key | Description |
 |---|---|
-| `dakera.rootApiKey` | Root API key for Dakera. **Required.** |
-| `minio.rootPassword` | MinIO root password for S3-compatible object storage. **Required.** |
+| `dakera.rootApiKey` | Root API key for Dakera. **Required**, unless `dakera.existingSecret` names a Secret that holds it. |
+| `minio.rootPassword` | MinIO root password for S3-compatible object storage. **Required** with `dakera.rootApiKey`; with `dakera.existingSecret`, that Secret's `MINIO_ROOT_PASSWORD`. |
 
 ### Common Options
 
@@ -187,6 +187,14 @@ Pass values with `--set key=value` or a `values.yaml` file (`-f values.yaml`).
 | `ingress.enabled` | `false` | Enable ingress |
 | `mcp.enabled` | `false` | dakera-mcp speaks MCP over stdio only: as a pod it exits at once (CrashLoopBackOff, measured with 0.10.11). Run it next to the MCP client |
 | `ingress.apiHost` / `ingress.dashboardHost` / `ingress.mcpHost` | unset | Ingress hostnames |
+| `dakera.existingSecret` | `""` | A Secret you manage instead of `<release>-secrets` |
+| `dakera.readOnlyRootFilesystem` | `true` | Read-only root filesystem (the data root, the model cache and `/tmp` are volumes) |
+| `minio.networkPolicy.enabled` | `true` | Only this release's Dakera pods reach the built-in MinIO |
+| `dakera.config.httpHeaderReadTimeoutSecs`, `neighborhoodMode`, `recallRankDepth`, ... | `""` | Settings of server releases after 0.12.2, rendered only when set (chart README) |
+
+Behind ingress-nginx or a load balancer, read the chart README, "Ingress and load balancers": from the server
+release after 0.12.2 an idle keep-alive connection is closed after `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (30 s),
+so the proxy's upstream idle timeout must be shorter. Security defaults: chart README, "Security defaults".
 
 Full values reference: [charts/dakera/values.yaml](charts/dakera/values.yaml)
 

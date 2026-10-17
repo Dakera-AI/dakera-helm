@@ -25,6 +25,7 @@ spec:
         app.kubernetes.io/component: downgrade
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -43,7 +44,7 @@ spec:
             - configMapRef:
                 name: {{ include "dakera.fullname" . }}-config
             - secretRef:
-                name: {{ include "dakera.fullname" . }}-secrets
+                name: {{ include "dakera.secretName" . }}
           {{- if or .Values.dakera.cluster.existingSecret.name .Values.dakera.extraEnv }}
           env:
             {{- include "dakera.clusterSecretEnv" . | nindent 12 }}
@@ -60,20 +61,20 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            {{- if .Values.dakera.persistence.enabled }}
             - name: data
               mountPath: {{ .Values.dakera.config.dataRoot | quote }}
-            {{- end }}
             - name: models
               mountPath: /app/models
             - name: tmp
               mountPath: /tmp
       volumes:
-        {{- if .Values.dakera.persistence.enabled }}
         - name: data
+          {{- if .Values.dakera.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "dakera.fullname" . }}-rocksdb
-        {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: models
           {{- if .Values.dakera.models.persistence.enabled }}
           persistentVolumeClaim:

@@ -18,7 +18,8 @@
           }
         },
         "replicaCount": {"type": "integer", "minimum": 1, "description": "Number of Dakera server replicas"},
-        "rootApiKey": {"type": "string", "description": "Root API key — REQUIRED. Set via --set or external secret."},
+        "rootApiKey": {"type": "string", "description": "Root API key — REQUIRED, here or in existingSecret. The chart stores it in <release>-secrets"},
+        "existingSecret": {"type": "string", "description": "A Secret you manage, used instead of <release>-secrets: DAKERA_ROOT_API_KEY and, with the built-in MinIO, MINIO_ROOT_PASSWORD, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY. Not with rootApiKey"},
         "config": {
           "type": "object",
           "description": "Dakera server runtime configuration",
@@ -45,7 +46,16 @@
             "sessionIdleTimeoutSecs": {"type": ["string", "integer"], "pattern": "^([0-9]+)?$", "minimum": 0, "description": "DAKERA_SESSION_IDLE_TIMEOUT_SECS (server 0.12.2): a session with no activity for this many seconds is ended by the server. Empty = the server default, 14400 (4 h); 0 = the server ends no session that did not set its own timeout; at most 2592000 (larger values are clamped)"},
             "maxMemoryContentBytes": {"type": ["string", "integer"], "pattern": "^([1-9][0-9]*)?$", "minimum": 1, "description": "DAKERA_MAX_MEMORY_CONTENT_BYTES (server 0.12.2): the longest memory content in UTF-8 bytes. Empty = the server default, 100000; an integer > 0 (0 refuses the boot)"},
             "vectorCacheBytes": {"type": ["string", "integer"], "pattern": "^([0-9]+|[0-9]+(\\.[0-9]+)? ?([kKmMgG]([iI]?[bB])?|[bB]))?$", "minimum": 0, "description": "DAKERA_VECTOR_CACHE_BYTES (server 0.12.2): the in-process L1 vector cache, a byte size (256MB, 1GB, or a bare number of bytes). Empty = the server default, 128MB. Not l1CacheSize (the tiered-storage hot tier)"},
-            "rocksdbRecordFormat": {"type": "string", "enum": ["", "binary", "json"], "description": "DAKERA_ROCKSDB_RECORD_FORMAT (server 0.12.2): how the RocksDB hot tier writes new records, binary (the server default) or json; both are always read. Empty = the server default"}
+            "rocksdbRecordFormat": {"type": "string", "enum": ["", "binary", "json"], "description": "DAKERA_ROCKSDB_RECORD_FORMAT (server 0.12.2): how the RocksDB hot tier writes new records, binary (the server default) or json; both are always read. Empty = the server default"},
+            "httpHeaderReadTimeoutSecs": {"type": ["string", "integer"], "pattern": "^([1-9][0-9]{0,4})?$", "minimum": 1, "maximum": 86400, "description": "DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): seconds a client has to send a complete HTTP/1 request head on the REST port; an idle keep-alive connection is closed after it. Empty = the server default, 30; 1 to 86400. Keep a proxy's upstream idle timeout below it"},
+            "neighborhoodMode": {"type": "string", "enum": ["", "inline", "separate", "off"], "description": "DAKERA_NEIGHBORHOOD_MODE (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): default neighbourhood mode of a recall. Empty = the server default, inline"},
+            "neighborhoodEventTime": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$", "description": "DAKERA_NEIGHBORHOOD_EVENT_TIME (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): neighbourhood window on event time. Empty = off"},
+            "recallRankDepth": {"type": ["string", "integer"], "pattern": "^([1-9][0-9]{0,2}|1000)?$", "minimum": 1, "maximum": 1000, "description": "DAKERA_RECALL_RANK_DEPTH (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): ranking depth floor, 1 to 1000. Empty = the server default, 10"},
+            "recallCollapseDerived": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$", "description": "DAKERA_RECALL_COLLAPSE_DERIVED (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): one result per source memory. Empty = off"},
+            "recallExcludeSummaries": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$", "description": "DAKERA_RECALL_EXCLUDE_SUMMARIES (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): session summaries left out unless a request sets include_summaries. Empty = off"},
+            "recallSessionCap": {"type": ["string", "integer"], "pattern": "^([0-9]+)?$", "minimum": 0, "description": "DAKERA_RECALL_SESSION_CAP (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): at most N results of one session in the head of list recalls. Empty = the server default, 0 (no cap)"},
+            "sentenceDecomp": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$", "description": "DAKERA_SENTENCE_DECOMP (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): false / 0 = no sentence sub-memories on any write path. Empty = on"},
+            "supersedesEventTime": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$", "description": "DAKERA_SUPERSEDES_EVENT_TIME (server releases after 0.12.2; a 0.12.2 image lists it as an unknown variable): false / 0 = Supersedes edges by created_at only. Empty = on (event dates)"}
           }
         },
         "cluster": {
@@ -139,7 +149,13 @@
           }
         },
         "podSecurityContext": {"type": "object", "description": "Pod security context (fsGroup 1000 by default)"},
-        "readOnlyRootFilesystem": {"type": "boolean", "description": "Read-only root filesystem for the server container"},
+        "readOnlyRootFilesystem": {"type": "boolean", "description": "Read-only root filesystem for the server container, its init container and the rollback Job (default true: the data root, the model cache and /tmp are volumes)"},
+        "probes": {
+          "type": "object",
+          "properties": {
+            "timeoutSeconds": {"type": "integer", "minimum": 1, "description": "timeoutSeconds of the server's startup, liveness and readiness probes"}
+          }
+        },
         "persistence": {
           "type": "object",
           "description": "Persistent volume for the data root",
@@ -216,6 +232,7 @@
         },
         "replicaCount": {"type": "integer", "minimum": 1},
         "sessionTtlHours": {"type": ["string", "integer"], "pattern": "^([0-9]+(\\.[0-9]+)?)?$", "description": "DAKERA_SESSION_TTL_HOURS; empty uses the dashboard default (12)"},
+        "securityContext": {"type": "object", "description": "Container securityContext of the dashboard (default: no privilege escalation, only CHOWN, DAC_OVERRIDE, SETGID, SETUID, which images up to 0.5.1 need)"},
         "resources": {
           "type": "object",
           "properties": {
@@ -282,7 +299,14 @@
           }
         },
         "rootUser": {"type": "string", "description": "MinIO root username"},
-        "rootPassword": {"type": "string", "description": "MinIO root password — REQUIRED when minio.enabled is true"},
+        "rootPassword": {"type": "string", "description": "MinIO root password — REQUIRED when minio.enabled is true (in the chart's Secret with rootApiKey, else in your Secret)"},
+        "networkPolicy": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean", "description": "NetworkPolicy: only this release's Dakera pods (and additionalFrom) reach MinIO"},
+            "additionalFrom": {"type": "array", "items": {"type": "object"}, "description": "More NetworkPolicyPeer entries allowed to reach MinIO (ports api and console)"}
+          }
+        },
         "persistence": {
           "type": "object",
           "properties": {

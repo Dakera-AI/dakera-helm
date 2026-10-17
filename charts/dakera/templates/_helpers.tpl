@@ -230,7 +230,16 @@ DAKERA_RABITQ_BITS: {{ . | quote }}
 {{- end }}
 
 {{/*
-Optional server settings of dakera.config (server 0.12.2), as ConfigMap entries. A value
+The Secret the server reads its keys from (DAKERA_ROOT_API_KEY, the MinIO credentials,
+DAKERA_CLUSTER_SECRET when chart-managed): dakera.existingSecret, else <fullname>-secrets
+(created by the chart from dakera.rootApiKey, or by the operator).
+*/}}
+{{- define "dakera.secretName" -}}
+{{- .Values.dakera.existingSecret | default (printf "%s-secrets" (include "dakera.fullname" .)) -}}
+{{- end }}
+
+{{/*
+Optional server settings of dakera.config (server 0.12.2 and later), as ConfigMap entries. A value
 that is unset or "" is left out (the server's default applies); 0 is a value
 (sessionIdleTimeoutSecs: 0 = the server ends no session by itself), so the test is on the
 string form, not on truthiness. A number from a values file arrives as float64: it is
@@ -242,7 +251,16 @@ rendered as an integer, never as 1e+05.
       (list "sessionIdleTimeoutSecs" "DAKERA_SESSION_IDLE_TIMEOUT_SECS")
       (list "maxMemoryContentBytes" "DAKERA_MAX_MEMORY_CONTENT_BYTES")
       (list "vectorCacheBytes" "DAKERA_VECTOR_CACHE_BYTES")
-      (list "rocksdbRecordFormat" "DAKERA_ROCKSDB_RECORD_FORMAT") }}
+      (list "rocksdbRecordFormat" "DAKERA_ROCKSDB_RECORD_FORMAT")
+      (list "httpHeaderReadTimeoutSecs" "DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS")
+      (list "neighborhoodMode" "DAKERA_NEIGHBORHOOD_MODE")
+      (list "neighborhoodEventTime" "DAKERA_NEIGHBORHOOD_EVENT_TIME")
+      (list "recallRankDepth" "DAKERA_RECALL_RANK_DEPTH")
+      (list "recallCollapseDerived" "DAKERA_RECALL_COLLAPSE_DERIVED")
+      (list "recallExcludeSummaries" "DAKERA_RECALL_EXCLUDE_SUMMARIES")
+      (list "recallSessionCap" "DAKERA_RECALL_SESSION_CAP")
+      (list "sentenceDecomp" "DAKERA_SENTENCE_DECOMP")
+      (list "supersedesEventTime" "DAKERA_SUPERSEDES_EVENT_TIME") }}
 {{- $v := index $c (index $pair 0) }}
 {{- if not (kindIs "invalid" $v) }}
 {{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}

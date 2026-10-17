@@ -1,0 +1,38 @@
+{{- if and .Values.minio.enabled .Values.minio.networkPolicy.enabled }}
+# Only the Dakera pods of this release reach the built-in MinIO: the server (and its
+# init container) and the rollback Job, which all carry the server's selector labels.
+# The dashboard and the MCP server have selector labels of their own and need no bucket.
+# MinIO's own postStart hook talks to 127.0.0.1, which a NetworkPolicy does not filter.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "dakera.fullname" . }}-minio
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dakera.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "dakera.minio.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "dakera.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: api
+          protocol: TCP
+    {{- with .Values.minio.networkPolicy.additionalFrom }}
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - port: api
+          protocol: TCP
+        - port: console
+          protocol: TCP
+    {{- end }}
+{{- end }}

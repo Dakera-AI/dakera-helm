@@ -3,6 +3,50 @@
 The chart version equals the Dakera server version it deploys. v0.11 lives on the
 `release/0.11` branch and in the 0.11.x chart versions (last published: 0.11.107).
 
+## Unreleased
+
+Still deploys server 0.12.2 and Dashboard 0.5.1 (no version change); prepares the chart for the next server
+release.
+
+### Upgrade notes
+
+1. **The server's root filesystem is read-only by default** (`dakera.readOnlyRootFilesystem: true`, was `false`),
+   also for the models init container and the rollback Job. Everything the server writes is on a volume: the data
+   root, the model cache and `/tmp`. With `dakera.persistence.enabled: false` the data root is now an `emptyDir`
+   (before: the container's own filesystem; both are lost with the pod). Measured with server 0.12.2 (store,
+   recall, backups). `--set dakera.readOnlyRootFilesystem=false` restores the previous behaviour.
+2. **The built-in MinIO accepts connections only from this release's Dakera pods** (new
+   `minio.networkPolicy.enabled: true`), where the network plugin enforces NetworkPolicy. Anything else that used
+   the bucket or scraped MinIO (a Prometheus) goes in `minio.networkPolicy.additionalFrom`, or set
+   `minio.networkPolicy.enabled=false`. `kubectl port-forward` is not affected.
+3. **Behind ingress-nginx or a load balancer** (server releases after 0.12.2): the server closes an idle keep-alive
+   connection after `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (30 s). Keep the proxy's upstream idle timeout below it
+   (ingress-nginx `upstream-keepalive-timeout`, 60 s by default) or raise `dakera.config.httpHeaderReadTimeoutSecs`
+   above it; README, "Ingress and load balancers".
+
+### Added
+
+- Optional `dakera.config` settings of the server releases after 0.12.2, rendered only when set (a 0.12.2 image
+  would list them as unknown) and checked by `values.schema.json`: `httpHeaderReadTimeoutSecs`
+  (`DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS`, 1 to 86400), `neighborhoodMode` (`inline` / `separate` / `off`),
+  `neighborhoodEventTime`, `recallRankDepth` (1 to 1000), `recallCollapseDerived`, `recallExcludeSummaries`,
+  `recallSessionCap`, `sentenceDecomp`, `supersedesEventTime`.
+- `dakera.existingSecret`: a Secret you manage (`DAKERA_ROOT_API_KEY`, and with the built-in MinIO
+  `MINIO_ROOT_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) instead of `<release>-secrets`; no secret in
+  the values. Refused together with `dakera.rootApiKey`.
+- `minio.networkPolicy` (see above); `dakera.probes.timeoutSeconds` (5); `dashboard.securityContext`.
+
+### Changed
+
+- Every pod: `automountServiceAccountToken: false` (nothing in the chart calls the Kubernetes API) and the
+  `RuntimeDefault` seccomp profile. Server probes: `timeoutSeconds: 5` (the 1 s default fails a busy server); they
+  stay `httpGet`, which needs nothing in the image (newer server images have no `curl`).
+- Dashboard: no privilege escalation and only `CHOWN`, `DAC_OVERRIDE`, `SETGID`, `SETUID` (its 0.5.1 image starts
+  as root; measured), and `global.imagePullSecrets` like the other pods. MCP: no privilege escalation, no capability.
+- The "create the Secret yourself" instructions printed without `rootApiKey` used `minioadmin` as the S3 access key
+  while the built-in MinIO runs as `minio.rootUser`: they now use `minio.rootUser`.
+- No `/ops/shutdown` caller in the chart: the server's new `super_admin` requirement for it needs no change here.
+
 ## 0.12.2 (Dakera server v0.12.2)
 
 Deploys server **0.12.2** (`ghcr.io/dakera-ai/dakera:0.12.2`) and Dashboard

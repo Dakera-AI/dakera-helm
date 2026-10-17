@@ -51,6 +51,48 @@ for kv in 'DAKERA_SESSION_IDLE_TIMEOUT_SECS: "14400"' 'DAKERA_VECTOR_CACHE_BYTES
   grep -qF "$kv" /tmp/chart-opt.yaml || { echo "FAIL: $kv not rendered from a values file"; fail=1; }
 done
 
+echo "== settings of server releases after 0.12.2: left out unless set, rendered when set"
+LATER_VARS="DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS DAKERA_NEIGHBORHOOD_MODE DAKERA_NEIGHBORHOOD_EVENT_TIME DAKERA_RECALL_RANK_DEPTH
+  DAKERA_RECALL_COLLAPSE_DERIVED DAKERA_RECALL_EXCLUDE_SUMMARIES DAKERA_RECALL_SESSION_CAP DAKERA_SENTENCE_DECOMP
+  DAKERA_SUPERSEDES_EVENT_TIME"
+for v in $LATER_VARS; do
+  if grep -q "$v" /tmp/chart-default.yaml; then echo "FAIL: $v rendered while unset (a 0.12.2 image would report it)"; fail=1; fi
+done
+NEW=(--set-string dakera.config.httpHeaderReadTimeoutSecs=75 --set dakera.config.neighborhoodMode=separate
+     --set dakera.config.neighborhoodEventTime=true --set-string dakera.config.recallRankDepth=20
+     --set dakera.config.recallCollapseDerived=true --set dakera.config.recallExcludeSummaries=true
+     --set-string dakera.config.recallSessionCap=0 --set dakera.config.sentenceDecomp=false
+     --set-string dakera.config.supersedesEventTime=0)
+"$HELM" lint "$CHART" "${REQ[@]}" "${NEW[@]}"
+"$HELM" template r "$CHART" "${REQ[@]}" "${NEW[@]}" --show-only templates/configmap.yaml > /tmp/chart-new.yaml
+for kv in 'DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS: "75"' 'DAKERA_NEIGHBORHOOD_MODE: "separate"' \
+          'DAKERA_NEIGHBORHOOD_EVENT_TIME: "true"' 'DAKERA_RECALL_RANK_DEPTH: "20"' 'DAKERA_RECALL_COLLAPSE_DERIVED: "true"' \
+          'DAKERA_RECALL_EXCLUDE_SUMMARIES: "true"' 'DAKERA_RECALL_SESSION_CAP: "0"' 'DAKERA_SENTENCE_DECOMP: "false"' \
+          'DAKERA_SUPERSEDES_EVENT_TIME: "0"'; do
+  grep -qF "$kv" /tmp/chart-new.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
+done
+
+echo "== hardening: read-only root, no service-account token, MinIO NetworkPolicy, probe timeouts"
+server=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: server/' /tmp/chart-default.yaml)
+printf '%s' "$server" | grep -q 'readOnlyRootFilesystem: true' || { echo "FAIL: server root filesystem not read-only"; fail=1; }
+printf '%s' "$server" | grep -q 'timeoutSeconds: 5' || { echo "FAIL: server probes without timeoutSeconds"; fail=1; }
+pods=$(grep -c '^kind: Deployment' /tmp/chart-default.yaml)
+tokens=$(grep -c 'automountServiceAccountToken: false' /tmp/chart-default.yaml)
+[ "$pods" = "$tokens" ] || { echo "FAIL: $tokens of $pods Deployments turn the service-account token off"; fail=1; }
+grep -q '^kind: NetworkPolicy' /tmp/chart-default.yaml || { echo "FAIL: MinIO NetworkPolicy not rendered"; fail=1; }
+if "$HELM" template r "$CHART" "${REQ[@]}" --set minio.enabled=false --set dakera.config.s3Endpoint=https://s3.example.test | grep -q '^kind: NetworkPolicy'; then
+  echo "FAIL: NetworkPolicy rendered without the built-in MinIO"; fail=1
+fi
+echo "== persistence off: the data root is an emptyDir (writable with the read-only root)"
+"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.persistence.enabled=false --show-only templates/deployment.yaml \
+  | awk 'BEGIN{RS="\n---\n"} /component: server/' | grep -A2 -- '- name: data$' | grep -q 'emptyDir' \
+  || { echo "FAIL: no data volume with persistence off"; fail=1; }
+echo "== existingSecret: every reference uses it, the chart creates no Secret"
+"$HELM" template r "$CHART" --set dakera.existingSecret=my-dakera --set rollback.enabled=true > /tmp/chart-es.yaml
+grep -q 'r-dakera-secrets' /tmp/chart-es.yaml && { echo "FAIL: <release>-secrets still referenced with existingSecret"; fail=1; }
+grep -q '^kind: Secret' /tmp/chart-es.yaml && { echo "FAIL: a Secret rendered with existingSecret"; fail=1; }
+[ "$(grep -c 'name: my-dakera' /tmp/chart-es.yaml)" -ge 3 ] || { echo "FAIL: existingSecret not referenced by server, MinIO and rollback Job"; fail=1; }
+
 echo "== refused combinations"
 expect_refusal() {
   local why=$1; shift
@@ -73,6 +115,13 @@ expect_refusal "memory content limit 0"                  --set dakera.config.max
 expect_refusal "unknown record format"                   --set dakera.config.rocksdbRecordFormat=yaml
 expect_refusal "vector cache not a byte size"            --set dakera.config.vectorCacheBytes=lots
 expect_refusal "idle timeout not a number of seconds"    --set dakera.config.sessionIdleTimeoutSecs=4h
+expect_refusal "header timeout 0"                       --set-string dakera.config.httpHeaderReadTimeoutSecs=0
+expect_refusal "header timeout over a day"              --set dakera.config.httpHeaderReadTimeoutSecs=86401
+expect_refusal "unknown neighbourhood mode"             --set dakera.config.neighborhoodMode=both
+expect_refusal "rank depth 0"                           --set-string dakera.config.recallRankDepth=0
+expect_refusal "rank depth over 1000"                   --set-string dakera.config.recallRankDepth=1001
+expect_refusal "flag not a boolean"                     --set dakera.config.sentenceDecomp=maybe
+expect_refusal "rootApiKey and existingSecret"          --set dakera.existingSecret=mine
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
 expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
 # Server 0.12.1: a cluster node without DAKERA_CLUSTER_SECRET exits with code 78.
