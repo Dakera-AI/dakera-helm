@@ -211,6 +211,16 @@ dakera:
   #     - name: DAKERA_CLUSTER_MODE
   #       value: "true"
   #
+  # Throughput and safety settings of 0.12.3 are sized by the server from the pod's
+  # cores and memory limit; set them here only to override (server README env tables):
+  # DAKERA_MAX_CONCURRENT_INFERENCES, DAKERA_ADMISSION_WAIT_SECS, DAKERA_INTERACTIVE_MIN_CORES,
+  # DAKERA_EMBED_PREPACK / DAKERA_RERANK_PREPACK (auto: on when 20% of the memory limit
+  # holds the copies), DAKERA_RERANKER_MODEL, DAKERA_RERANK_PASSAGE_TOKENS,
+  # DAKERA_RERANK_CACHE_ENTRIES, DAKERA_HNSW_CACHE_BYTES, DAKERA_MEM_TRIM_INTERVAL_SECS,
+  # DAKERA_AUDIT_SAMPLE_RATE, DAKERA_AUDIT_READ_SAMPLE_RATE, DAKERA_AUTOPILOT_DEDUP_MODE
+  # (default off), DAKERA_AUTOPILOT_TRASH_RETENTION_HOURS, REEMBED_BATCH_SIZE,
+  # REEMBED_INTERVAL_SECS. Set resources.limits.memory: the server sizes from it.
+  #
   # Embedding model change: the store records the model that embedded it. From
   # 0.12.1 a pod with another model of the registry starts and re-embeds the store
   # in the background, one agent namespace at a time, each answered with its own
