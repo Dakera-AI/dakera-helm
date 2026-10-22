@@ -230,7 +230,16 @@ DAKERA_RABITQ_BITS: {{ . | quote }}
 {{- end }}
 
 {{/*
-Optional server settings of dakera.config (server 0.12.2), as ConfigMap entries. A value
+The Secret the server reads its keys from (DAKERA_ROOT_API_KEY, the MinIO credentials,
+DAKERA_CLUSTER_SECRET when chart-managed): dakera.existingSecret, else <fullname>-secrets
+(created by the chart from dakera.rootApiKey, or by the operator).
+*/}}
+{{- define "dakera.secretName" -}}
+{{- .Values.dakera.existingSecret | default (printf "%s-secrets" (include "dakera.fullname" .)) -}}
+{{- end }}
+
+{{/*
+Optional server settings of dakera.config (server 0.12.2 and later), as ConfigMap entries. A value
 that is unset or "" is left out (the server's default applies); 0 is a value
 (sessionIdleTimeoutSecs: 0 = the server ends no session by itself), so the test is on the
 string form, not on truthiness. A number from a values file arrives as float64: it is
@@ -242,7 +251,19 @@ rendered as an integer, never as 1e+05.
       (list "sessionIdleTimeoutSecs" "DAKERA_SESSION_IDLE_TIMEOUT_SECS")
       (list "maxMemoryContentBytes" "DAKERA_MAX_MEMORY_CONTENT_BYTES")
       (list "vectorCacheBytes" "DAKERA_VECTOR_CACHE_BYTES")
-      (list "rocksdbRecordFormat" "DAKERA_ROCKSDB_RECORD_FORMAT") }}
+      (list "rocksdbRecordFormat" "DAKERA_ROCKSDB_RECORD_FORMAT")
+      (list "httpHeaderReadTimeoutSecs" "DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS")
+      (list "neighborhoodMode" "DAKERA_NEIGHBORHOOD_MODE")
+      (list "neighborhoodEventTime" "DAKERA_NEIGHBORHOOD_EVENT_TIME")
+      (list "recallRankDepth" "DAKERA_RECALL_RANK_DEPTH")
+      (list "recallCollapseDerived" "DAKERA_RECALL_COLLAPSE_DERIVED")
+      (list "recallExcludeSummaries" "DAKERA_RECALL_EXCLUDE_SUMMARIES")
+      (list "recallSessionCap" "DAKERA_RECALL_SESSION_CAP")
+      (list "sentenceDecomp" "DAKERA_SENTENCE_DECOMP")
+      (list "supersedesEventTime" "DAKERA_SUPERSEDES_EVENT_TIME")
+      (list "maxConnections" "DAKERA_MAX_CONNECTIONS")
+      (list "shutdownDrainSecs" "DAKERA_SHUTDOWN_DRAIN_SECS")
+      (list "allowedHosts" "DAKERA_ALLOWED_HOSTS") }}
 {{- $v := index $c (index $pair 0) }}
 {{- if not (kindIs "invalid" $v) }}
 {{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}
@@ -251,6 +272,40 @@ rendered as an integer, never as 1e+05.
 {{- end }}
 {{- end }}
 {{- end }}
+{{- $d := $c.documents | default dict -}}
+{{- range $pair := list
+      (list "enabled" "DAKERA_DOCUMENTS")
+      (list "maxBytes" "DAKERA_DOCUMENT_MAX_BYTES")
+      (list "maxTextBytes" "DAKERA_DOCUMENT_MAX_TEXT_BYTES")
+      (list "maxChunks" "DAKERA_DOCUMENT_MAX_CHUNKS")
+      (list "chunkTokens" "DAKERA_DOCUMENT_CHUNK_TOKENS")
+      (list "chunkOverlapTokens" "DAKERA_DOCUMENT_CHUNK_OVERLAP_TOKENS")
+      (list "extractTimeoutSecs" "DAKERA_DOCUMENT_EXTRACT_TIMEOUT_SECS")
+      (list "extractMemoryMb" "DAKERA_DOCUMENT_EXTRACT_MEMORY_MB")
+      (list "extractConcurrency" "DAKERA_DOCUMENT_EXTRACT_CONCURRENCY") }}
+{{- $v := index $d (index $pair 0) }}
+{{- if not (kindIs "invalid" $v) }}
+{{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}
+{{- if ne (toString $v) "" }}
+{{ index $pair 1 }}: {{ toString $v | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+The pod's grace period must hold the shutdown: up to 15 s for running media jobs, the REST
+drain (dakera.config.shutdownDrainSecs, server default 8) and a margin for the final flushes
+(5 s). Rendered, and so evaluated, by configmap.yaml.
+*/}}
+{{- define "dakera.shutdown.validate" -}}
+{{- $d := .Values.dakera.config.shutdownDrainSecs -}}
+{{- $drain := 8 -}}
+{{- if and (not (kindIs "invalid" $d)) (ne (toString $d) "") -}}{{- $drain = int (toString $d) -}}{{- end -}}
+{{- $grace := int .Values.dakera.terminationGracePeriodSeconds -}}
+{{- if lt $grace (add 15 $drain 5) -}}
+{{- fail (printf "dakera.terminationGracePeriodSeconds (%d) must be at least 15 + shutdownDrainSecs (%d) + 5 = %d: the server waits up to 15 s for media jobs, then drains REST connections, then flushes; a shorter grace period kills it mid-shutdown" $grace $drain (add 15 $drain 5)) -}}
+{{- end -}}
 {{- end }}
 
 {{/* DAKERA_SEARCH_MODE: rabitq when that feature is on, else dakera.config.searchMode. */}}

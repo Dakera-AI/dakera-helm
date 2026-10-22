@@ -2,8 +2,8 @@
 # One-off rollback to v0.11.108: `dakera downgrade` makes the data v0.11.108's
 # again. Run it AFTER the server has stopped (scale the Deployment to 0 first):
 # it refuses (exit 78, nothing changed) while a server runs on the data. Same
-# environment and volumes as the server. The image is the server's (0.12.2): its
-# downgrade rewrites the binary RocksDB hot-tier records 0.12.2 writes as JSON
+# environment and volumes as the server. The image is the server's (0.12.3): its
+# downgrade rewrites the binary RocksDB hot-tier records 0.12.2+ writes as JSON
 # first, which an older v0.12 image would not. Not part of a normal install; see the
 # README, "Rolling back to v0.11". Read the JSON report on stdout:
 #   kubectl logs job/<fullname>-downgrade
@@ -25,6 +25,7 @@ spec:
         app.kubernetes.io/component: downgrade
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -43,7 +44,7 @@ spec:
             - configMapRef:
                 name: {{ include "dakera.fullname" . }}-config
             - secretRef:
-                name: {{ include "dakera.fullname" . }}-secrets
+                name: {{ include "dakera.secretName" . }}
           {{- if or .Values.dakera.cluster.existingSecret.name .Values.dakera.extraEnv }}
           env:
             {{- include "dakera.clusterSecretEnv" . | nindent 12 }}
@@ -60,20 +61,20 @@ spec:
             capabilities:
               drop: [ALL]
           volumeMounts:
-            {{- if .Values.dakera.persistence.enabled }}
             - name: data
               mountPath: {{ .Values.dakera.config.dataRoot | quote }}
-            {{- end }}
             - name: models
               mountPath: /app/models
             - name: tmp
               mountPath: /tmp
       volumes:
-        {{- if .Values.dakera.persistence.enabled }}
         - name: data
+          {{- if .Values.dakera.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "dakera.fullname" . }}-rocksdb
-        {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: models
           {{- if .Values.dakera.models.persistence.enabled }}
           persistentVolumeClaim:

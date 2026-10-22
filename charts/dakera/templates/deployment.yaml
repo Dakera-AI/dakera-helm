@@ -31,7 +31,10 @@ spec:
         prometheus.io/port: {{ .Values.dakera.config.port | quote }}
         prometheus.io/path: "/metrics"
     spec:
-      terminationGracePeriodSeconds: 30
+      # Media jobs (up to 15 s), the REST drain (shutdownDrainSecs), the final flushes.
+      terminationGracePeriodSeconds: {{ .Values.dakera.terminationGracePeriodSeconds }}
+      # The server does not call the Kubernetes API.
+      automountServiceAccountToken: false
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -100,7 +103,7 @@ spec:
             - configMapRef:
                 name: {{ include "dakera.fullname" . }}-config
             - secretRef:
-                name: {{ include "dakera.fullname" . }}-secrets
+                name: {{ include "dakera.secretName" . }}
           {{- if or .Values.dakera.cluster.existingSecret.name .Values.dakera.extraEnv }}
           env:
             {{- include "dakera.clusterSecretEnv" . | nindent 12 }}
@@ -110,21 +113,26 @@ spec:
           {{- end }}
           # The port binds before the models load and /health/live answers 200
           # from then on (a model that is not in the image may download for
-          # minutes): liveness never restarts a pod that is downloading. The
-          # startup probe covers the time before the port binds (write-ahead-log
-          # replay, stored state): periodSeconds x failureThreshold = 10 minutes.
+          # minutes): liveness never restarts a pod that is downloading. From
+          # 0.12.3 the port also binds before crash recovery (/health/ready
+          # reports its progress); the startup probe covers an older image's
+          # write-ahead-log replay before the port binds: periodSeconds x
+          # failureThreshold = 10 minutes.
           startupProbe:
             httpGet:
               path: /health/live
               port: http
             periodSeconds: 10
+            timeoutSeconds: {{ .Values.dakera.probes.timeoutSeconds }}
             failureThreshold: 60
           livenessProbe:
             httpGet:
               path: /health/live
               port: http
             periodSeconds: 30
-          # /health answers 200 even while a component is degraded;
+            timeoutSeconds: {{ .Values.dakera.probes.timeoutSeconds }}
+          # /health answers 200 while a component is degraded (from 0.12.3: 503
+          # while storage refuses writes and the server recovers it);
           # /health/ready is 503 until storage answers and the embedding engine
           # is up.
           readinessProbe:
@@ -132,6 +140,7 @@ spec:
               path: /health/ready
               port: http
             periodSeconds: 10
+            timeoutSeconds: {{ .Values.dakera.probes.timeoutSeconds }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 1000
@@ -143,21 +152,23 @@ spec:
           resources:
             {{- include "dakera.serverResources" . | nindent 12 }}
           volumeMounts:
-            {{- if .Values.dakera.persistence.enabled }}
+            # The data root: the PVC, or an emptyDir (as ephemeral as the container's own
+            # filesystem, but kept across container restarts, and writable with a read-only root).
             - name: data
               mountPath: {{ .Values.dakera.config.dataRoot | quote }}
-            {{- end }}
             # The model cache (HF_HOME): models the image does not ship.
             - name: models
               mountPath: /app/models
             - name: tmp
               mountPath: /tmp
       volumes:
-        {{- if .Values.dakera.persistence.enabled }}
         - name: data
+          {{- if .Values.dakera.persistence.enabled }}
           persistentVolumeClaim:
             claimName: {{ include "dakera.fullname" . }}-rocksdb
-        {{- end }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: models
           {{- if eq (include "dakera.modelsPersist" .) "true" }}
           persistentVolumeClaim:
@@ -232,6 +243,14 @@ spec:
         app.kubernetes.io/component: dashboard
     spec:
       terminationGracePeriodSeconds: 10
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: dashboard
           image: "{{ .Values.dashboard.image.repository }}:{{ .Values.dashboard.image.tag }}"
@@ -248,6 +267,11 @@ spec:
             - name: DAKERA_SESSION_TTL_HOURS
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.dashboard.trustedProxies }}
+            # Proxies whose X-Forwarded-For names the client (dashboard 0.5.2, nginx real_ip).
+            - name: DAKERA_TRUSTED_PROXIES
+              value: {{ . | quote }}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /_session/healthz
@@ -260,8 +284,23 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+          {{- with .Values.dashboard.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.dashboard.securityContext.readOnlyRootFilesystem }}
+          # Dashboard 0.5.2 writes its runtime nginx configuration, pid and temp files here.
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          {{- end }}
           resources:
             {{- toYaml .Values.dashboard.resources | nindent 12 }}
+      {{- if .Values.dashboard.securityContext.readOnlyRootFilesystem }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- end }}
 {{- end }}
 ---
 {{- if .Values.mcp.enabled }}
@@ -286,6 +325,14 @@ spec:
         app.kubernetes.io/component: mcp
     spec:
       terminationGracePeriodSeconds: 10
+      automountServiceAccountToken: false
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: dakera-mcp
           image: "{{ .Values.mcp.image.repository }}:{{ .Values.mcp.image.tag }}"
@@ -300,7 +347,7 @@ spec:
             - name: DAKERA_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "dakera.fullname" . }}-secrets
+                  name: {{ include "dakera.secretName" . }}
                   key: DAKERA_ROOT_API_KEY
             - name: MCP_PORT
               value: {{ .Values.mcp.config.port | quote }}
@@ -316,6 +363,10 @@ spec:
               port: http
             initialDelaySeconds: 5
             periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
           resources:
             {{- toYaml .Values.mcp.resources | nindent 12 }}
 {{- end }}
