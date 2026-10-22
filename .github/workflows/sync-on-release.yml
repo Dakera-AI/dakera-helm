@@ -1,24 +1,36 @@
-name: Publish chart on dakera server release
+name: Chart bump PR on dakera server release
 
-# Root-cause trigger (DAK-9921), replacing the daily freshness poll.
-# The dakera server release.yml fires repository_dispatch
-# (event_type: dakera-server-release) on every release. This workflow bumps the
-# chart appVersion to the released server version, commits to main, and then
-# explicitly dispatches helm-release + helm-publish-oci so the chart publishes to
-# Artifact Hub (GitHub Pages) + the GHCR OCI registry. dakera-helm is the single
-# build/publish source of truth for the chart. No polling, no drift detection.
+# The dakera server release.yml fires repository_dispatch (event_type:
+# dakera-server-release, client_payload.version) after its deploy. main is
+# protected (changes go through a reviewed pull request), so this opens a PR that
+# moves the chart to the released server version: version, appVersion, the
+# artifacthub images/changes annotations and a CHANGELOG entry. Merging it
+# publishes the chart: helm-release and helm-publish-oci run on charts/** pushes
+# to main. Nothing is pushed to main from here.
+#
+# A chart already at that version, or an open PR that already sets it (a
+# hand-written release PR such as the one for 0.12.3), wins: no duplicate PR.
+# GH_PAT_PACKAGES pushes the branch and opens the PR: a GITHUB_TOKEN-created PR
+# would not run Chart CI, and this repository does not let Actions open PRs.
+#
+# dry_run (manual runs only) goes through every step for any published server
+# version, opens the PR as a draft and then closes it and deletes its branch:
+# a check that the token and the path still work.
 on:
   repository_dispatch:
     types: [dakera-server-release]
   workflow_dispatch:
     inputs:
       force_version:
-        description: 'Server version to sync to (e.g. v0.11.108)'
+        description: 'Server version to sync to (e.g. v0.12.3)'
         required: true
+      dry_run:
+        description: 'Open the PR as a draft, then close it and delete its branch'
+        type: boolean
+        default: false
 
 permissions:
-  contents: write
-  actions: write
+  contents: read
 
 concurrency:
   group: chart-appversion-sync
@@ -26,71 +38,133 @@ concurrency:
 
 jobs:
   sync:
-    name: Bump chart to released server version and publish
+    name: Open a PR bumping the chart to the released server version
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_PAT_PACKAGES }}
+      DRY_RUN: ${{ github.event.inputs.dry_run == 'true' }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with:
+          ref: main
           fetch-depth: 0
+          token: ${{ secrets.GH_PAT_PACKAGES }}
 
-      - name: Resolve target server version
-        id: resolve
+      - name: Resolve target and current versions
+        id: v
+        env:
+          # Passed through env, never pasted into the script: the payload is input.
+          RAW: ${{ github.event.client_payload.version || github.event.inputs.force_version }}
         run: |
-          RAW="${{ github.event.client_payload.version || github.event.inputs.force_version }}"
-          if [ -z "$RAW" ]; then
-            echo "ERROR: no version in dispatch payload or manual input" >&2
+          set -euo pipefail
+          TARGET="${RAW#v}"
+          if ! [[ "$TARGET" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::'$RAW' is not a server version (X.Y.Z or vX.Y.Z)"
             exit 1
           fi
-          TARGET="${RAW#v}"
+          CURRENT=$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' charts/dakera/Chart.yaml)
+          echo "Target server version: $TARGET, chart appVersion: $CURRENT, dry run: $DRY_RUN"
           echo "target=$TARGET" >> "$GITHUB_OUTPUT"
-          echo "Target server version: $TARGET"
-
-      - name: Read current chart appVersion
-        id: current
-        run: |
-          CURRENT=$(grep '^appVersion:' charts/dakera/Chart.yaml | sed 's/appVersion: *//;s/"//g')
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
-          echo "Current chart appVersion: $CURRENT"
+          ACTION=bump
+          if [ "$DRY_RUN" != true ]; then
+            if [ "$TARGET" = "$CURRENT" ]; then
+              ACTION=skip; echo "Chart already at $TARGET: nothing to do."
+            elif [ "$(printf '%s\n%s\n' "$CURRENT" "$TARGET" | sort -V | tail -1)" != "$TARGET" ]; then
+              ACTION=skip; echo "::warning::$TARGET is older than the chart's $CURRENT: not downgrading."
+            fi
+          fi
+          echo "action=$ACTION" >> "$GITHUB_OUTPUT"
 
-      - name: Bump Chart.yaml + commit
-        if: steps.current.outputs.current != steps.resolve.outputs.target
+      - name: Skip when a PR already sets this version
+        id: dup
+        if: steps.v.outputs.action == 'bump' && env.DRY_RUN != 'true'
+        env:
+          TARGET: ${{ steps.v.outputs.target }}
         run: |
-          TARGET="${{ steps.resolve.outputs.target }}"
-          sed -i "s/^version:.*/version: ${TARGET}/" charts/dakera/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${TARGET}\"/" charts/dakera/Chart.yaml
+          set -euo pipefail
+          FOUND=""
+          for pr in $(gh pr list --state open --base main --json number --jq '.[].number'); do
+            head=$(gh pr view "$pr" --json headRefOid --jq .headRefOid)
+            app=$(gh api "repos/${GITHUB_REPOSITORY}/contents/charts/dakera/Chart.yaml?ref=${head}" --jq .content 2>/dev/null \
+              | base64 -d | sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' || true)
+            if [ "$app" = "$TARGET" ]; then FOUND="$pr"; break; fi
+          done
+          if [ -n "$FOUND" ]; then
+            echo "PR #$FOUND already sets appVersion $TARGET: no new PR. Merging it publishes the chart."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump the chart and open the PR
+        if: steps.v.outputs.action == 'bump' && steps.dup.outputs.skip != 'true'
+        env:
+          TARGET: ${{ steps.v.outputs.target }}
+          CURRENT: ${{ steps.v.outputs.current }}
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/dakera-ai/dakera:${TARGET}"
+          # Never point the chart at an image that is not published.
+          docker buildx imagetools inspect "$IMAGE" --format '{{json .Manifest}}' >/dev/null \
+            || { echo "::error::$IMAGE is not published"; exit 1; }
+
+          BRANCH="chore/chart-sync-${TARGET}"
+          [ "$DRY_RUN" = true ] && BRANCH="${BRANCH}-dry-run-${GITHUB_RUN_ID}"
+          if [ "$DRY_RUN" != true ] && [ -n "$(gh pr list --head "$BRANCH" --state all --json number --jq '.[0].number')" ]; then
+            echo "A PR from $BRANCH already exists (open, merged or closed): not opening another."
+            exit 0
+          fi
+
+          git checkout -b "$BRANCH"
           python3 - "$TARGET" <<'PY'
           import re, sys
           target = sys.argv[1]
-          with open("charts/dakera/Chart.yaml") as f:
-              c = f.read()
-          new = (
+          p = "charts/dakera/Chart.yaml"
+          c = open(p).read()
+          c = re.sub(r"(?m)^version:.*$", f"version: {target}", c)
+          c = re.sub(r'(?m)^appVersion:.*$', f'appVersion: "{target}"', c)
+          c = re.sub(r"(image: ghcr\.io/dakera-ai/dakera:)[^\s]+", rf"\g<1>{target}", c)
+          changes = (
               "  artifacthub.io/changes: |\n"
               "    - kind: changed\n"
-              f"      description: Bump Dakera server to {target} (triggered by dakera release)\n"
+              f"      description: Dakera server {target} (chart {target}; the image tag follows appVersion)\n"
           )
-          c = re.sub(r"  artifacthub\.io/changes: \|.*?(?=\n  artifacthub|\Z)", new, c, flags=re.DOTALL)
-          with open("charts/dakera/Chart.yaml", "w") as f:
-              f.write(c)
+          c, n = re.subn(r"  artifacthub\.io/changes: \|\n(?:    .*\n)*", changes, c)
+          if n != 1:
+              sys.exit("Chart.yaml: artifacthub.io/changes annotation not found")
+          open(p, "w").write(c)
+
+          p = "charts/dakera/CHANGELOG.md"
+          log = open(p).read()
+          i = log.index("\n## ") + 1
+          entry = (
+              f"## {target} (Dakera server v{target})\n\n"
+              f"Deploys server **{target}** (`ghcr.io/dakera-ai/dakera:{target}`). No chart changes beyond\n"
+              "the server version; the dashboard image is unchanged.\n\n"
+          )
+          open(p, "w").write(log[:i] + entry + log[i:])
           PY
-          grep -E "^version:|^appVersion:" charts/dakera/Chart.yaml
+          git diff --stat
+
           git config user.name "dakera-release-bot"
           git config user.email "release-bot@dakera.ai"
-          git add charts/dakera/Chart.yaml
-          git commit -m "chore(helm): bump chart to ${TARGET} (triggered by dakera server release)"
-          git push origin HEAD:main
+          git commit -qam "chore(helm): bump chart to ${TARGET} (Dakera server v${TARGET})"
+          git push -q origin "HEAD:refs/heads/${BRANCH}"
 
-      - name: Publish chart (OCI + Artifact Hub)
-        # Explicit dispatch: a GITHUB_TOKEN commit does not re-trigger the
-        # charts/**-path workflows, so we invoke both publishers directly.
-        if: steps.current.outputs.current != steps.resolve.outputs.target
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run helm-release.yml --ref main
-          gh workflow run helm-publish-oci.yml --ref main
-          echo "✅ Dispatched helm-release + helm-publish-oci for chart ${{ steps.resolve.outputs.target }}"
+          TITLE="chore(helm): chart ${TARGET} for Dakera server v${TARGET}"
+          BODY="Opened by \`sync-on-release.yml\` after the Dakera server v${TARGET} release.
 
-      - name: Already in sync
-        if: steps.current.outputs.current == steps.resolve.outputs.target
-        run: echo "Chart already at ${{ steps.resolve.outputs.target }} — nothing to do."
+          - \`version\` / \`appVersion\`: ${CURRENT} → ${TARGET}; the server image (\`${IMAGE}\`) is published.
+          - artifacthub images/changes annotations and a CHANGELOG entry.
+
+          Chart CI lints and renders the chart on this PR. **Merging publishes the chart** (helm-release to GitHub Pages / Artifact Hub, helm-publish-oci to GHCR). If the release needs chart changes beyond the version, add them here or close this PR in favour of a release PR."
+          DRAFT=""
+          [ "$DRY_RUN" = true ] && { TITLE="[dry run] ${TITLE}"; DRAFT="--draft"; }
+          URL=$(gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY" $DRAFT)
+          echo "Opened $URL"
+
+          if [ "$DRY_RUN" = true ]; then
+            gh pr close "$URL" --delete-branch --comment "Dry run of sync-on-release.yml: the token pushed a branch and opened this PR. Closed automatically."
+            echo "Dry run: closed $URL and deleted $BRANCH"
+          fi
