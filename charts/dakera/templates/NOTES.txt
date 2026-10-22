@@ -103,12 +103,15 @@ Dakera has been deployed!
 == Authentication is OFF (dakera.config.authEnabled: false) ==
   Anyone who reaches the Service is a SuperAdmin.
 {{- if .Values.dakera.config.allowedHosts }}
-  Host names accepted besides localhost, IPs and "{{ include "dakera.fullname" . }}": {{ .Values.dakera.config.allowedHosts }}
+  Host names accepted besides localhost, IPs, "{{ include "dakera.fullname" . }}" and private-use names
+  (*.local, *.internal, *.home.arpa): {{ .Values.dakera.config.allowedHosts }}
 {{- else }}
-  From server 0.12.3 a request whose Host is a dotted name gets 421 HOST_NOT_ALLOWED unless it is listed
-  in dakera.config.allowedHosts: in-cluster clients must call http://{{ include "dakera.fullname" . }}:{{ .Values.dakera.service.httpPort }},
-  not {{ include "dakera.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local{{ if and .Values.ingress.enabled .Values.ingress.apiHost }}, and the ingress host {{ .Values.ingress.apiHost }} is refused{{ end }}.
-  Set e.g. --set dakera.config.allowedHosts={{ include "dakera.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local{{ if and .Values.ingress.enabled .Values.ingress.apiHost }}\,{{ .Values.ingress.apiHost }}{{ end }}
+  From server 0.12.3 a request whose Host is a public dotted name gets 421 HOST_NOT_ALLOWED unless it is
+  listed in dakera.config.allowedHosts. In-cluster clients keep working: http://{{ include "dakera.fullname" . }}:{{ .Values.dakera.service.httpPort }}
+  and {{ include "dakera.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local are accepted (a cluster domain other than *.local is not).
+{{- if and .Values.ingress.enabled .Values.ingress.apiHost }}
+  The ingress host {{ .Values.ingress.apiHost }} is refused: --set dakera.config.allowedHosts={{ .Values.ingress.apiHost }}
+{{- end }}
 {{- end }}
 {{- end }}
 

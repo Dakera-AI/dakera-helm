@@ -4,6 +4,10 @@
 # combinations the server cannot run are refused with a message.
 # Usage: scripts/validate-chart.sh            (HELM=/path/to/helm to choose the binary)
 set -euo pipefail
+# `grep -q` at the end of a pipe exits at the first match: with pipefail, a writer still
+# writing (helm template, a long manifest) then dies of SIGPIPE (141) and fails the script.
+# grep_q reads all of its input.
+grep_q() { grep "$@" >/dev/null; }
 HELM=${HELM:-helm}
 CHART=charts/dakera
 REQ=(--set dakera.rootApiKey=ci-lint --set minio.rootPassword=ci-lint)
@@ -34,7 +38,7 @@ done
 echo "== monitoring objects"
 "$HELM" lint "$CHART" "${REQ[@]}" --set monitoring.prometheusRule.enabled=true --set monitoring.grafanaDashboard.enabled=true
 "$HELM" template r "$CHART" "${REQ[@]}" --set monitoring.prometheusRule.enabled=true --set monitoring.grafanaDashboard.enabled=true \
-  | grep -q "kind: PrometheusRule"
+  | grep_q "kind: PrometheusRule"
 
 echo "== server 0.12.2 settings: rendered when set, 0 kept, numbers from a values file as integers"
 OPT=(--set dakera.config.sessionIdleTimeoutSecs=0 --set dakera.config.maxMemoryContentBytes=200000
@@ -76,13 +80,13 @@ done
 
 echo "== hardening: read-only root, no service-account token, MinIO NetworkPolicy, probe timeouts"
 server=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: server/' /tmp/chart-default.yaml)
-printf '%s' "$server" | grep -q 'readOnlyRootFilesystem: true' || { echo "FAIL: server root filesystem not read-only"; fail=1; }
-printf '%s' "$server" | grep -q 'timeoutSeconds: 5' || { echo "FAIL: server probes without timeoutSeconds"; fail=1; }
+printf '%s' "$server" | grep_q 'readOnlyRootFilesystem: true' || { echo "FAIL: server root filesystem not read-only"; fail=1; }
+printf '%s' "$server" | grep_q 'timeoutSeconds: 5' || { echo "FAIL: server probes without timeoutSeconds"; fail=1; }
 pods=$(grep -c '^kind: Deployment' /tmp/chart-default.yaml)
 tokens=$(grep -c 'automountServiceAccountToken: false' /tmp/chart-default.yaml)
 [ "$pods" = "$tokens" ] || { echo "FAIL: $tokens of $pods Deployments turn the service-account token off"; fail=1; }
 grep -q '^kind: NetworkPolicy' /tmp/chart-default.yaml || { echo "FAIL: MinIO NetworkPolicy not rendered"; fail=1; }
-if "$HELM" template r "$CHART" "${REQ[@]}" --set minio.enabled=false --set dakera.config.s3Endpoint=https://s3.example.test | grep -q '^kind: NetworkPolicy'; then
+if "$HELM" template r "$CHART" "${REQ[@]}" --set minio.enabled=false --set dakera.config.s3Endpoint=https://s3.example.test | grep_q '^kind: NetworkPolicy'; then
   echo "FAIL: NetworkPolicy rendered without the built-in MinIO"; fail=1
 fi
 echo "== document import: rendered when set, left out by default; ingress accepts 25 MiB bodies"
@@ -95,24 +99,24 @@ for kv in 'DAKERA_DOCUMENTS: "false"' 'DAKERA_DOCUMENT_MAX_BYTES: "52428800"' 'D
   grep -qF "$kv" /tmp/chart-docs.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
 done
 "$HELM" template r "$CHART" "${REQ[@]}" --set ingress.enabled=true --set ingress.apiHost=a.example.test --show-only templates/ingress.yaml \
-  | grep -qF 'nginx.ingress.kubernetes.io/proxy-body-size: 500m' || { echo "FAIL: ingress without proxy-body-size"; fail=1; }
+  | grep_q -F 'nginx.ingress.kubernetes.io/proxy-body-size: 500m' || { echo "FAIL: ingress without proxy-body-size"; fail=1; }
 
 echo "== dashboard 0.5.2: uid 10001, read-only root with a /tmp emptyDir, trusted proxies when set"
 dashdep=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/' /tmp/chart-default.yaml)
 for want in 'runAsUser: 10001' 'readOnlyRootFilesystem: true' 'mountPath: /tmp' 'emptyDir: {}'; do
-  printf '%s' "$dashdep" | grep -qF "$want" || { echo "FAIL: dashboard: $want missing"; fail=1; }
+  printf '%s' "$dashdep" | grep_q -F "$want" || { echo "FAIL: dashboard: $want missing"; fail=1; }
 done
-printf '%s' "$dashdep" | grep -q 'DAKERA_TRUSTED_PROXIES' && { echo "FAIL: DAKERA_TRUSTED_PROXIES rendered while unset"; fail=1; }
+printf '%s' "$dashdep" | grep_q 'DAKERA_TRUSTED_PROXIES' && { echo "FAIL: DAKERA_TRUSTED_PROXIES rendered while unset"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set dashboard.trustedProxies='10.0.0.0/8 172.16.0.0/12' \
-  | grep -A1 'name: DAKERA_TRUSTED_PROXIES' | grep -qF '"10.0.0.0/8 172.16.0.0/12"' || { echo "FAIL: trustedProxies not rendered"; fail=1; }
+  | grep -A1 'name: DAKERA_TRUSTED_PROXIES' | grep_q -F '"10.0.0.0/8 172.16.0.0/12"' || { echo "FAIL: trustedProxies not rendered"; fail=1; }
 echo "== grace period follows terminationGracePeriodSeconds; a long drain needs a longer one"
-printf '%s' "$server" | grep -q 'terminationGracePeriodSeconds: 30' || { echo "FAIL: server grace period not 30"; fail=1; }
+printf '%s' "$server" | grep_q 'terminationGracePeriodSeconds: 30' || { echo "FAIL: server grace period not 30"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set-string dakera.config.shutdownDrainSecs=60 --set dakera.terminationGracePeriodSeconds=80 > /dev/null \
   || { echo "FAIL: drain 60 with grace 80 refused"; fail=1; }
 
 echo "== persistence off: the data root is an emptyDir (writable with the read-only root)"
 "$HELM" template r "$CHART" "${REQ[@]}" --set dakera.persistence.enabled=false --show-only templates/deployment.yaml \
-  | awk 'BEGIN{RS="\n---\n"} /component: server/' | grep -A2 -- '- name: data$' | grep -q 'emptyDir' \
+  | awk 'BEGIN{RS="\n---\n"} /component: server/' | grep -A2 -- '- name: data$' | grep_q 'emptyDir' \
   || { echo "FAIL: no data volume with persistence off"; fail=1; }
 echo "== existingSecret: every reference uses it, the chart creates no Secret"
 "$HELM" template r "$CHART" --set dakera.existingSecret=my-dakera --set rollback.enabled=true > /tmp/chart-es.yaml
@@ -172,9 +176,9 @@ expect_refusal "cluster secret in extraEnv and cluster"  "${CM[@]}" --set 'daker
   --set-string 'dakera.extraEnv[1].value=0123456789abcdef' --set dakera.cluster.secret=0123456789abcdef
 echo "== cluster mode with a secret renders it"
 "$HELM" template r "$CHART" "${REQ[@]}" "${CM[@]}" --set dakera.cluster.secret=0123456789abcdef \
-  | grep -q 'DAKERA_CLUSTER_SECRET: "0123456789abcdef"' || { echo "FAIL: cluster.secret not in the Secret"; fail=1; }
+  | grep_q 'DAKERA_CLUSTER_SECRET: "0123456789abcdef"' || { echo "FAIL: cluster.secret not in the Secret"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" "${CM[@]}" --set dakera.cluster.existingSecret.name=mine \
-  | grep -A3 'name: DAKERA_CLUSTER_SECRET' | grep -q 'name: "mine"' || { echo "FAIL: existingSecret not referenced"; fail=1; }
+  | grep -A3 'name: DAKERA_CLUSTER_SECRET' | grep_q 'name: "mine"' || { echo "FAIL: existingSecret not referenced"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set-string 'dakera.extraEnv[0].value=false' --set 'dakera.extraEnv[0].name=DAKERA_CLUSTER_MODE' > /dev/null \
   || { echo "FAIL: DAKERA_CLUSTER_MODE=false refused"; fail=1; }
 # The chart's Secret (where dakera.cluster.secret goes) is rendered only with rootApiKey.
@@ -185,7 +189,7 @@ else
 fi
 
 echo "== built-in MinIO creates the server's bucket"
-"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.s3Bucket=ci-bucket | grep -q "mb --ignore-existing local/ci-bucket" \
+"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.s3Bucket=ci-bucket | grep_q "mb --ignore-existing local/ci-bucket" \
   || { echo "FAIL: MinIO does not create the bucket"; fail=1; }
 
 echo "== the dashboard gets no API key (0.3.x served it to every browser)"

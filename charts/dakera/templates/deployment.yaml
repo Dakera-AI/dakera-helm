@@ -113,9 +113,11 @@ spec:
           {{- end }}
           # The port binds before the models load and /health/live answers 200
           # from then on (a model that is not in the image may download for
-          # minutes): liveness never restarts a pod that is downloading. The
-          # startup probe covers the time before the port binds (write-ahead-log
-          # replay, stored state): periodSeconds x failureThreshold = 10 minutes.
+          # minutes): liveness never restarts a pod that is downloading. From
+          # 0.12.3 the port also binds before crash recovery (/health/ready
+          # reports its progress); the startup probe covers an older image's
+          # write-ahead-log replay before the port binds: periodSeconds x
+          # failureThreshold = 10 minutes.
           startupProbe:
             httpGet:
               path: /health/live
@@ -129,7 +131,8 @@ spec:
               port: http
             periodSeconds: 30
             timeoutSeconds: {{ .Values.dakera.probes.timeoutSeconds }}
-          # /health answers 200 even while a component is degraded;
+          # /health answers 200 while a component is degraded (from 0.12.3: 503
+          # while storage refuses writes and the server recovers it);
           # /health/ready is 503 until storage answers and the embedding engine
           # is up.
           readinessProbe:

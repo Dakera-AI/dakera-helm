@@ -97,9 +97,15 @@ Chart 0.12.3 deploys server 0.12.3 and Dashboard 0.5.2; nothing is migrated by h
 - **Connections:** an idle keep-alive (and HTTP/2) connection is closed after
   `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (30 s): see "Ingress and load balancers". The shutdown drains REST
   connections for `shutdownDrainSecs` (8 s); `dakera.terminationGracePeriodSeconds` (30) must hold 15 + it + 5.
-- **Authentication off** (`dakera.config.authEnabled: false`): a request whose `Host` is a dotted name (the
-  Service FQDN `<fullname>.<namespace>.svc.cluster.local`, the ingress host) gets **421** unless listed in
-  `dakera.config.allowedHosts`. `http://<fullname>:3000` and IPs keep working.
+- **Authentication off** (`dakera.config.authEnabled: false`): a request whose `Host` is a public dotted name
+  (the ingress host) gets **421** unless listed in `dakera.config.allowedHosts`. `http://<fullname>:3000`, IPs and
+  private-use names (`*.local`, `*.internal`, `*.home.arpa`: the Service FQDN
+  `<fullname>.<namespace>.svc.cluster.local`) keep working.
+- **Autopilot deduplication is off by default** (earlier releases merged near-duplicates every 6 hours): add
+  `DAKERA_AUTOPILOT_DEDUP_MODE=merge` to `dakera.extraEnv` to keep it. A full queue answers `429` + `Retry-After`
+  (was `503`); recall of an agent that has stored nothing answers `200` with no memories. The server raises its
+  open-files limit to the hard limit at startup, sizes its model pools to the physical cores, and, under a memory
+  limit with room for them, prepacks the model weights (faster, more memory; values.yaml, `extraEnv`).
 - **Dashboard 0.5.2** runs as uid/gid 10001 with a read-only root (the chart mounts `/tmp`); new optional
   `dashboard.trustedProxies` (`DAKERA_TRUSTED_PROXIES`). Chart defaults that changed: read-only root filesystem for
   the server, the MinIO NetworkPolicy, no service-account tokens (CHANGELOG.md, 0.12.3, upgrade notes).

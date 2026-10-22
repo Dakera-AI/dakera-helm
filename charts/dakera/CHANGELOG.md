@@ -13,8 +13,10 @@ Deploys server **0.12.3** (`ghcr.io/dakera-ai/dakera:0.12.3`) and Dashboard **0.
 Nothing is migrated by hand: back up (`POST /admin/backups`), then `helm upgrade`. Server behaviour that changes:
 `POST /ops/shutdown` needs a global `super_admin` key; four admin routes refuse unknown JSON fields (422); the image
 is distroless (uid/gid 1000, no `curl` or shell tools; the probes are `httpGet`); the GPU image is CUDA 13 (NVIDIA
-driver R580+). With **authentication off**, a request whose `Host` is a dotted name (the Service FQDN, the ingress
-host) gets 421 unless listed in `dakera.config.allowedHosts` (NOTES prints the names). Dashboard 0.5.2 runs as
+driver R580+). With **authentication off**, a request whose `Host` is a public dotted name (the ingress host) gets
+421 unless listed in `dakera.config.allowedHosts` (the Service FQDN, a `*.local` name, is accepted; NOTES prints the
+names). Autopilot deduplication is off by default (`DAKERA_AUTOPILOT_DEDUP_MODE=merge` in `dakera.extraEnv` keeps
+it); a full queue answers `429` + `Retry-After` (was `503`). Dashboard 0.5.2 runs as
 uid/gid 10001 with a read-only root and a `/tmp` emptyDir (`dashboard.securityContext`; an image up to 0.5.1 needs
 the old root settings, see values.yaml). Chart defaults that changed:
 
@@ -67,6 +69,12 @@ the old root settings, see values.yaml). Chart defaults that changed:
 - The "create the Secret yourself" instructions printed without `rootApiKey` used `minioadmin` as the S3 access key
   while the built-in MinIO runs as `minio.rootUser`: they now use `minio.rootUser`.
 - No `/ops/shutdown` caller in the chart: the server's new `super_admin` requirement for it needs no change here.
+- Checked against the final server 0.12.3: every `DAKERA_*` name the chart renders is one it accepts (`--check-config`
+  on the default render and with every 0.12.3 setting set). With authentication off, the Service FQDN (a `*.local`
+  name) needs no `allowedHosts` entry: the server accepts private-use names (`*.local`, `*.internal`,
+  `*.home.arpa`); NOTES, values.yaml and the README now say so and only ask for public names (the ingress host).
+- `scripts/validate-chart.sh`: `helm template ... | grep -q` under `pipefail` could fail with SIGPIPE (141) when
+  helm was still writing; the checks read their whole input now.
 
 ## 0.12.2 (Dakera server v0.12.2)
 

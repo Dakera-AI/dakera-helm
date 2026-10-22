@@ -139,11 +139,13 @@ dakera:
     # dakera.terminationGracePeriodSeconds.
     shutdownDrainSecs: ""
     # DAKERA_ALLOWED_HOSTS: read ONLY with authEnabled: false. A request whose Host is not
-    # localhost / *.localhost / an IP / a single-label name (the Service name) or listed
-    # here gets 421 HOST_NOT_ALLOWED (DNS-rebinding guard; /health* and /internal/* are
-    # exempt). Without authentication, list every dotted name clients use: the Service FQDN
-    # (<fullname>.<namespace>.svc.cluster.local) and the ingress host. Comma separated; "*" = any.
-    #   allowedHosts: "dakera.dakera.svc.cluster.local,api.dakera.example.com"
+    # localhost / *.localhost / an IP / a single-label name (the Service name) / a private-use
+    # name (*.local, *.internal, *.home.arpa: the Service FQDN
+    # <fullname>.<namespace>.svc.cluster.local) or listed here gets 421 HOST_NOT_ALLOWED
+    # (DNS-rebinding guard; /health* and /internal/* are exempt). Without authentication,
+    # list every public dotted name clients use (the ingress host; a Service FQDN under a
+    # cluster domain other than *.local). Comma separated; "*" = any.
+    #   allowedHosts: "api.dakera.example.com"
     allowedHosts: ""
 
     # Document import (server 0.12.3, on by default; server docs/documents.md):
@@ -215,10 +217,12 @@ dakera:
   # cores and memory limit; set them here only to override (server README env tables):
   # DAKERA_MAX_CONCURRENT_INFERENCES, DAKERA_ADMISSION_WAIT_SECS, DAKERA_INTERACTIVE_MIN_CORES,
   # DAKERA_EMBED_PREPACK / DAKERA_RERANK_PREPACK (auto: on when 20% of the memory limit
-  # holds the copies), DAKERA_RERANKER_MODEL, DAKERA_RERANK_PASSAGE_TOKENS,
+  # holds the copies, about 0.3 GB per core each; with the default 4Gi / 2 CPU limit the
+  # reranker's is on and the embedder's off), DAKERA_RERANKER_MODEL, DAKERA_RERANK_PASSAGE_TOKENS,
   # DAKERA_RERANK_CACHE_ENTRIES, DAKERA_HNSW_CACHE_BYTES, DAKERA_MEM_TRIM_INTERVAL_SECS,
   # DAKERA_AUDIT_SAMPLE_RATE, DAKERA_AUDIT_READ_SAMPLE_RATE, DAKERA_AUTOPILOT_DEDUP_MODE
-  # (default off), DAKERA_AUTOPILOT_TRASH_RETENTION_HOURS, REEMBED_BATCH_SIZE,
+  # (default off from 0.12.3; "merge" keeps the earlier releases' scheduled dedup),
+  # DAKERA_AUTOPILOT_TRASH_RETENTION_HOURS, REEMBED_BATCH_SIZE,
   # REEMBED_INTERVAL_SECS. Set resources.limits.memory: the server sizes from it.
   #
   # Embedding model change: the store records the model that embedded it. From

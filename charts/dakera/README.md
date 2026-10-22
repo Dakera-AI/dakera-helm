@@ -99,9 +99,15 @@ Chart 0.12.3 deploys server 0.12.3 and Dashboard 0.5.2; nothing is migrated by h
 - **Connections:** an idle keep-alive (and HTTP/2) connection is closed after
   `DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS` (30 s): see "Ingress and load balancers". The shutdown drains REST
   connections for `shutdownDrainSecs` (8 s); `dakera.terminationGracePeriodSeconds` (30) must hold 15 + it + 5.
-- **Authentication off** (`dakera.config.authEnabled: false`): a request whose `Host` is a dotted name (the
-  Service FQDN `<fullname>.<namespace>.svc.cluster.local`, the ingress host) gets **421** unless listed in
-  `dakera.config.allowedHosts`. `http://<fullname>:3000` and IPs keep working.
+- **Authentication off** (`dakera.config.authEnabled: false`): a request whose `Host` is a public dotted name
+  (the ingress host) gets **421** unless listed in `dakera.config.allowedHosts`. `http://<fullname>:3000`, IPs and
+  private-use names (`*.local`, `*.internal`, `*.home.arpa`: the Service FQDN
+  `<fullname>.<namespace>.svc.cluster.local`) keep working.
+- **Autopilot deduplication is off by default** (earlier releases merged near-duplicates every 6 hours): add
+  `DAKERA_AUTOPILOT_DEDUP_MODE=merge` to `dakera.extraEnv` to keep it. A full queue answers `429` + `Retry-After`
+  (was `503`); recall of an agent that has stored nothing answers `200` with no memories. The server raises its
+  open-files limit to the hard limit at startup, sizes its model pools to the physical cores, and, under a memory
+  limit with room for them, prepacks the model weights (faster, more memory; values.yaml, `extraEnv`).
 - **Dashboard 0.5.2** runs as uid/gid 10001 with a read-only root (the chart mounts `/tmp`); new optional
   `dashboard.trustedProxies` (`DAKERA_TRUSTED_PROXIES`). Chart defaults that changed: read-only root filesystem for
   the server, the MinIO NetworkPolicy, no service-account tokens (CHANGELOG.md, 0.12.3, upgrade notes).
@@ -245,7 +251,7 @@ and `AWS_SECRET_ACCESS_KEY` (= the MinIO password). Not together with `dakera.ro
 | `dakera.config.maxConnections` | `""` (server: `10000`) | Server 0.12.3. `DAKERA_MAX_CONNECTIONS`: most open REST connections, 1 to 1000000 |
 | `dakera.config.shutdownDrainSecs` | `""` (server: `8`) | Server 0.12.3. `DAKERA_SHUTDOWN_DRAIN_SECS`: longest REST drain at shutdown, 0 to 3600. 15 + it + 5 must fit in `dakera.terminationGracePeriodSeconds` (`30`; the chart refuses otherwise) |
 | `dakera.config.documents.*` | `""` (server defaults) | Server 0.12.3 document import (on by default): `enabled`, `maxBytes` (25 MiB), `maxTextBytes`, `maxChunks`, `chunkTokens` (32–8192), `chunkOverlapTokens` (0–1024), `extractTimeoutSecs`, `extractMemoryMb` (1024), `extractConcurrency` (2). PDF / DOCX extraction uses up to `extractConcurrency` x `extractMemoryMb` on top of the server inside `dakera.resources.limits.memory` (4Gi): for PDF-heavy imports raise it (6Gi) or use concurrency 1 |
-| `dakera.config.allowedHosts` | `""` | Server 0.12.3. `DAKERA_ALLOWED_HOSTS`, **required with `authEnabled: false`** when clients use a dotted name (Service FQDN, ingress host): others get 421. Comma list, `*` = any |
+| `dakera.config.allowedHosts` | `""` | Server 0.12.3. `DAKERA_ALLOWED_HOSTS`, **required with `authEnabled: false`** when clients use a public dotted name (the ingress host; the Service FQDN, a `*.local` name, is accepted): others get 421. Comma list, `*` = any |
 | `dakera.config.neighborhoodEventTime`, `recallCollapseDerived`, `recallExcludeSummaries`, `recallSessionCap`, `sentenceDecomp`, `supersedesEventTime` | `""` (server defaults) | Server 0.12.3: `DAKERA_NEIGHBORHOOD_EVENT_TIME`, `DAKERA_RECALL_COLLAPSE_DERIVED`, `DAKERA_RECALL_EXCLUDE_SUMMARIES`, `DAKERA_RECALL_SESSION_CAP`, `DAKERA_SENTENCE_DECOMP`, `DAKERA_SUPERSEDES_EVENT_TIME` (values.yaml describes each). Rendered only when set: an image up to 0.12.2 would list them as unknown |
 | `dakera.persistence.size` | `20Gi` | PVC size for the data root |
 | `dakera.cluster.secret` / `dakera.cluster.existingSecret.name` | empty | `DAKERA_CLUSTER_SECRET`, stored in a Secret. Required in cluster mode (at least 16 chars, same on every node); see "Cluster mode" |
