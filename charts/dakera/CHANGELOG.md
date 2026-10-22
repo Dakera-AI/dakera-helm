@@ -5,6 +5,11 @@ The chart version equals the Dakera server version it deploys. v0.11 lives on th
 
 ## 0.12.3 (Dakera server v0.12.3)
 
+Deploys server **0.12.3** (`ghcr.io/dakera-ai/dakera:0.12.3`). No chart changes beyond
+the server version; the dashboard image is unchanged.
+
+## 0.12.3 (Dakera server v0.12.3)
+
 Deploys server **0.12.3** (`ghcr.io/dakera-ai/dakera:0.12.3`) and Dashboard **0.5.2**
 (`ghcr.io/dakera-ai/dakera-dashboard:0.5.2`). Released after both images are published.
 
