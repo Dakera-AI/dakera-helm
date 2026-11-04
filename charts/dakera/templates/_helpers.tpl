@@ -171,6 +171,39 @@ startup). Rendered, and so evaluated, by configmap.yaml.
 {{- if and $f.rabitq.bits (not $f.rabitq.enabled) }}
 {{- fail "dakera.features.rabitq.bits only applies with dakera.features.rabitq.enabled=true" }}
 {{- end }}
+{{- include "dakera.gliner.validate" . }}
+{{- end }}
+
+{{/*
+"true" when the embedding model reads many languages (bge-m3 through features.multilingual,
+or DAKERA_MODEL=bge-m3 / multilingual-minilm in extraEnv): the GLiNER model must then be a
+multilingual one. Under the tiered embedding engine (DAKERA_TIERED=1) the server still reads
+DAKERA_MODEL for this choice.
+*/}}
+{{- define "dakera.multilingualEmbedder" -}}
+{{- $m := "" -}}
+{{- if .Values.dakera.features.multilingual.enabled -}}{{- $m = "bge-m3" -}}{{- end -}}
+{{- range .Values.dakera.extraEnv -}}
+{{- if and (eq (toString .name) "DAKERA_MODEL") (hasKey . "value") -}}{{- $m = lower (trim (toString .value)) -}}{{- end -}}
+{{- end -}}
+{{- if has $m (list "bge-m3" "multilingual-minilm") -}}true{{- end -}}
+{{- end }}
+
+{{/*
+dakera.config.glinerModel must read the embedding model's languages (server 0.12.4: another
+one refuses a fresh install and runs the default on an existing one).
+*/}}
+{{- define "dakera.gliner.validate" -}}
+{{- $g := lower (trim (toString (.Values.dakera.config.glinerModel | default ""))) -}}
+{{- if $g -}}
+{{- $multi := eq (include "dakera.multilingualEmbedder" .) "true" -}}
+{{- if and $multi (has $g (list "gliner-bi-small" "gliner-bi-edge" "gliner-medium")) -}}
+{{- fail (printf "dakera.config.glinerModel %s reads English only, but the embedding model is multilingual (bge-m3 / multilingual-minilm): use gliner-x-small or gliner-multi, or leave it empty (gliner-x-small)" $g) -}}
+{{- end -}}
+{{- if and (not $multi) (has $g (list "gliner-x-small" "gliner-multi")) -}}
+{{- fail (printf "dakera.config.glinerModel %s is multilingual, but the embedding model is English (bge-large by default): use gliner-bi-small, gliner-bi-edge or gliner-medium, or leave it empty (gliner-bi-small); with features.multilingual it fits" $g) -}}
+{{- end -}}
+{{- end -}}
 {{- end }}
 
 {{/*
@@ -263,7 +296,17 @@ rendered as an integer, never as 1e+05.
       (list "supersedesEventTime" "DAKERA_SUPERSEDES_EVENT_TIME")
       (list "maxConnections" "DAKERA_MAX_CONNECTIONS")
       (list "shutdownDrainSecs" "DAKERA_SHUTDOWN_DRAIN_SECS")
-      (list "allowedHosts" "DAKERA_ALLOWED_HOSTS") }}
+      (list "allowedHosts" "DAKERA_ALLOWED_HOSTS")
+      (list "contactEmail" "DAKERA_CONTACT_EMAIL")
+      (list "defaultEntityTypes" "DAKERA_DEFAULT_ENTITY_TYPES")
+      (list "glinerModel" "DAKERA_GLINER_MODEL")
+      (list "entityTagging" "DAKERA_ENTITY_TAGGING")
+      (list "standingInstructions" "DAKERA_STANDING_INSTRUCTIONS")
+      (list "forgetRequests" "DAKERA_FORGET_REQUESTS")
+      (list "recallImportanceWeighted" "DAKERA_RECALL_IMPORTANCE_WEIGHTED")
+      (list "recallIncludeAssociated" "DAKERA_RECALL_INCLUDE_ASSOCIATED")
+      (list "rerankHead" "DAKERA_RERANK_HEAD")
+      (list "autopilotConsolidationMode" "DAKERA_AUTOPILOT_CONSOLIDATION_MODE") }}
 {{- $v := index $c (index $pair 0) }}
 {{- if not (kindIs "invalid" $v) }}
 {{- if kindIs "float64" $v }}{{- $v = int64 $v }}{{- end }}
@@ -314,14 +357,16 @@ drain (dakera.config.shutdownDrainSecs, server default 8) and a margin for the f
 {{- end }}
 
 {{/*
-The server container's resources: the vision / multimodal feature's own block when that
-feature is enabled and sets one (the measured configuration is 4 cores / 8 GiB), else
-dakera.resources.
+The server container's resources: the vision / multilingual / multimodal feature's own block
+when that feature is enabled and sets one (vision and multimodal: the measured 4 cores / 8 GiB;
+multilingual: the 8 CPUs bge-m3 wants), in that order, else dakera.resources.
 */}}
 {{- define "dakera.serverResources" -}}
 {{- $f := .Values.dakera.features -}}
 {{- if and $f.vision.enabled $f.vision.resources -}}
 {{- toYaml $f.vision.resources -}}
+{{- else if and $f.multilingual.enabled $f.multilingual.resources -}}
+{{- toYaml $f.multilingual.resources -}}
 {{- else if and $f.multimodal.enabled $f.multimodal.resources -}}
 {{- toYaml $f.multimodal.resources -}}
 {{- else -}}

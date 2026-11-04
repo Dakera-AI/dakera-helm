@@ -78,6 +78,49 @@ for kv in 'DAKERA_HTTP_HEADER_READ_TIMEOUT_SECS: "75"' 'DAKERA_NEIGHBORHOOD_MODE
   grep -qF "$kv" /tmp/chart-new.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
 done
 
+echo "== server 0.12.4 settings: left out unless set, rendered when set"
+V0124_VARS="DAKERA_CONTACT_EMAIL DAKERA_DEFAULT_ENTITY_TYPES DAKERA_GLINER_MODEL DAKERA_ENTITY_TAGGING DAKERA_STANDING_INSTRUCTIONS
+  DAKERA_FORGET_REQUESTS DAKERA_RECALL_IMPORTANCE_WEIGHTED DAKERA_RECALL_INCLUDE_ASSOCIATED DAKERA_RERANK_HEAD
+  DAKERA_AUTOPILOT_CONSOLIDATION_MODE"
+for v in $V0124_VARS; do
+  if grep -q "$v" /tmp/chart-default.yaml; then echo "FAIL: $v rendered while unset (a 0.12.3 image would report it)"; fail=1; fi
+done
+N4=(--set dakera.config.contactEmail=ops@example.test --set-string 'dakera.config.defaultEntityTypes=person\,@technical'
+    --set dakera.config.glinerModel=gliner-medium --set dakera.config.entityTagging=inline
+    --set-string dakera.config.standingInstructions=false --set dakera.config.forgetRequests=apply
+    --set-string dakera.config.recallImportanceWeighted=true --set-string dakera.config.recallIncludeAssociated=false
+    --set-string dakera.config.rerankHead=0 --set dakera.config.autopilotConsolidationMode=merge)
+"$HELM" lint "$CHART" "${REQ[@]}" "${N4[@]}"
+"$HELM" template r "$CHART" "${REQ[@]}" "${N4[@]}" --show-only templates/configmap.yaml > /tmp/chart-0124.yaml
+for kv in 'DAKERA_CONTACT_EMAIL: "ops@example.test"' 'DAKERA_DEFAULT_ENTITY_TYPES: "person,@technical"' \
+          'DAKERA_GLINER_MODEL: "gliner-medium"' 'DAKERA_ENTITY_TAGGING: "inline"' 'DAKERA_STANDING_INSTRUCTIONS: "false"' \
+          'DAKERA_FORGET_REQUESTS: "apply"' 'DAKERA_RECALL_IMPORTANCE_WEIGHTED: "true"' \
+          'DAKERA_RECALL_INCLUDE_ASSOCIATED: "false"' 'DAKERA_RERANK_HEAD: "0"' 'DAKERA_AUTOPILOT_CONSOLIDATION_MODE: "merge"'; do
+  grep -qF "$kv" /tmp/chart-0124.yaml || { echo "FAIL: $kv not rendered"; fail=1; }
+done
+echo "== GLiNER model of the embedding model's languages is accepted"
+"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.tiered=0 --set dakera.features.multilingual.enabled=true \
+  --set dakera.config.glinerModel=gliner-x-small > /dev/null || { echo "FAIL: gliner-x-small with multilingual refused"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set 'dakera.extraEnv[0].name=DAKERA_MODEL' --set-string 'dakera.extraEnv[0].value=multilingual-minilm' \
+  --set dakera.config.glinerModel=gliner-multi > /dev/null || { echo "FAIL: gliner-multi with multilingual-minilm refused"; fail=1; }
+
+echo "== sizing: 4 CPUs / 6Gi by default, 8 CPUs with multilingual (also beside multimodal)"
+server_res() { awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: server/' | sed -n '/^ *resources:/,/^ *volumeMounts:/p'; }
+"$HELM" template r "$CHART" "${REQ[@]}" | server_res > /tmp/chart-res.txt
+grep -q 'cpu: "4"' /tmp/chart-res.txt && grep -q 'memory: 6Gi' /tmp/chart-res.txt || { echo "FAIL: default server limits are not 4 CPUs / 6Gi"; cat /tmp/chart-res.txt; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set dakera.config.tiered=0 --set dakera.features.multilingual.enabled=true \
+  --set dakera.features.multimodal.enabled=true | server_res > /tmp/chart-res.txt
+grep -q 'cpu: "8"' /tmp/chart-res.txt || { echo "FAIL: multilingual (+ multimodal) without 8 CPUs"; cat /tmp/chart-res.txt; fail=1; }
+
+echo "== rollback Job: downgrade by default, checkpoint on request"
+"$HELM" template r "$CHART" "${REQ[@]}" --set rollback.enabled=true --show-only templates/rollback-job.yaml > /tmp/chart-rb.yaml
+grep -q 'name: r-dakera-downgrade' /tmp/chart-rb.yaml && grep -qF 'args: ["downgrade"]' /tmp/chart-rb.yaml \
+  || { echo "FAIL: default rollback Job is not the downgrade"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set rollback.enabled=true --set rollback.command=checkpoint \
+  --show-only templates/rollback-job.yaml > /tmp/chart-rb.yaml
+grep -q 'name: r-dakera-checkpoint' /tmp/chart-rb.yaml && grep -qF 'args: ["checkpoint"]' /tmp/chart-rb.yaml \
+  || { echo "FAIL: rollback.command=checkpoint does not run dakera checkpoint"; fail=1; }
+
 echo "== hardening: read-only root, no service-account token, MinIO NetworkPolicy, probe timeouts"
 server=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: server/' /tmp/chart-default.yaml)
 printf '%s' "$server" | grep_q 'readOnlyRootFilesystem: true' || { echo "FAIL: server root filesystem not read-only"; fail=1; }
@@ -101,7 +144,7 @@ done
 "$HELM" template r "$CHART" "${REQ[@]}" --set ingress.enabled=true --set ingress.apiHost=a.example.test --show-only templates/ingress.yaml \
   | grep_q -F 'nginx.ingress.kubernetes.io/proxy-body-size: 500m' || { echo "FAIL: ingress without proxy-body-size"; fail=1; }
 
-echo "== dashboard 0.5.2: uid 10001, read-only root with a /tmp emptyDir, trusted proxies when set"
+echo "== dashboard 0.5.3: uid 10001, read-only root with a /tmp emptyDir, trusted proxies when set, telemetry switch"
 dashdep=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/' /tmp/chart-default.yaml)
 for want in 'runAsUser: 10001' 'readOnlyRootFilesystem: true' 'mountPath: /tmp' 'emptyDir: {}'; do
   printf '%s' "$dashdep" | grep_q -F "$want" || { echo "FAIL: dashboard: $want missing"; fail=1; }
@@ -109,6 +152,11 @@ done
 printf '%s' "$dashdep" | grep_q 'DAKERA_TRUSTED_PROXIES' && { echo "FAIL: DAKERA_TRUSTED_PROXIES rendered while unset"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set dashboard.trustedProxies='10.0.0.0/8 172.16.0.0/12' \
   | grep -A1 'name: DAKERA_TRUSTED_PROXIES' | grep_q -F '"10.0.0.0/8 172.16.0.0/12"' || { echo "FAIL: trustedProxies not rendered"; fail=1; }
+printf '%s' "$dashdep" | grep_q 'ghcr.io/dakera-ai/dakera-dashboard:0.5.3' || { echo "FAIL: dashboard image not 0.5.3"; fail=1; }
+printf '%s' "$dashdep" | grep_q 'DAKERA_TELEMETRY' && { echo "FAIL: DAKERA_TELEMETRY rendered with telemetry on"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set dashboard.telemetry=false \
+  | awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/' \
+  | grep -A1 'name: DAKERA_TELEMETRY' | grep_q -F '"off"' || { echo "FAIL: dashboard.telemetry=false not rendered"; fail=1; }
 echo "== grace period follows terminationGracePeriodSeconds; a long drain needs a longer one"
 printf '%s' "$server" | grep_q 'terminationGracePeriodSeconds: 30' || { echo "FAIL: server grace period not 30"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set-string dakera.config.shutdownDrainSecs=60 --set dakera.terminationGracePeriodSeconds=80 > /dev/null \
@@ -153,6 +201,17 @@ expect_refusal "rank depth 0"                           --set-string dakera.conf
 expect_refusal "rank depth over 1000"                   --set-string dakera.config.recallRankDepth=1001
 expect_refusal "flag not a boolean"                     --set dakera.config.sentenceDecomp=maybe
 expect_refusal "rootApiKey and existingSecret"          --set dakera.existingSecret=mine
+# Values the 0.12.4 server refuses to boot on.
+expect_refusal "contact e-mail not an address"          --set dakera.config.contactEmail=ops-team
+expect_refusal "unknown GLiNER model"                   --set dakera.config.glinerModel=gliner-large
+expect_refusal "multilingual GLiNER, English embedder"  --set dakera.config.glinerModel=gliner-x-small
+expect_refusal "English GLiNER beside bge-m3"           --set dakera.config.tiered=0 --set dakera.features.multilingual.enabled=true --set dakera.config.glinerModel=gliner-bi-small
+expect_refusal "English GLiNER beside DAKERA_MODEL=bge-m3" --set 'dakera.extraEnv[0].name=DAKERA_MODEL' --set-string 'dakera.extraEnv[0].value=bge-m3' --set dakera.config.glinerModel=gliner-medium
+expect_refusal "unknown forget-request mode"            --set dakera.config.forgetRequests=always
+expect_refusal "unknown consolidation mode"             --set dakera.config.autopilotConsolidationMode=fold
+expect_refusal "entity type with a colon"               --set-string 'dakera.config.defaultEntityTypes=entity:person'
+expect_refusal "rerank head not a number"               --set-string dakera.config.rerankHead=ten
+expect_refusal "unknown rollback command"               --set rollback.enabled=true --set rollback.command=restore
 expect_refusal "drain longer than the grace period"     --set-string dakera.config.shutdownDrainSecs=60
 expect_refusal "drain over an hour"                     --set-string dakera.config.shutdownDrainSecs=3601 --set dakera.terminationGracePeriodSeconds=4000
 expect_refusal "max connections 0"                      --set-string dakera.config.maxConnections=0
@@ -163,6 +222,7 @@ expect_refusal "document overlap over 1024"             --set-string dakera.conf
 expect_refusal "document extraction concurrency 0"      --set-string dakera.config.documents.extractConcurrency=0
 expect_refusal "unknown document setting"               --set dakera.config.documents.maxPages=10
 expect_refusal "trusted proxies not addresses"          --set 'dashboard.trustedProxies=10.0.0.0/8;evil'
+expect_refusal "dashboard telemetry not a boolean"      --set-string 'dashboard.telemetry=maybe'
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
 expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
 # Server 0.12.1: a cluster node without DAKERA_CLUSTER_SECRET exits with code 78.

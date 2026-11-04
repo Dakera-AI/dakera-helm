@@ -3,6 +3,55 @@
 The chart version equals the Dakera server version it deploys. v0.11 lives on the
 `release/0.11` branch and in the 0.11.x chart versions (last published: 0.11.107).
 
+## 0.12.4 (Dakera server v0.12.4)
+
+Deploys server **0.12.4** (`ghcr.io/dakera-ai/dakera:0.12.4`) and Dashboard **0.5.3**
+(`ghcr.io/dakera-ai/dakera-dashboard:0.5.3`). Released after both images are published.
+
+- **Dashboard 0.5.3**: forget by request and the agent's trash, the engine's setup advice, standing instructions in
+  the Recall lab, ways to reach the team, and anonymous usage telemetry (never content, ids, names or keys).
+  `dashboard.telemetry: false` (new) renders `DAKERA_TELEMETRY=off` in its pod; it deploys like 0.5.2 otherwise.
+
+### Upgrade notes (0.12.3 to 0.12.4)
+
+Nothing is migrated by hand (the on-disk format is unchanged): back up (`POST /admin/backups`), then `helm upgrade`.
+Every `DAKERA_*` variable in `dakera.extraEnv` must be one 0.12.4 knows, with a valid value (a fresh install
+refuses an unknown name or an invalid value). Server behaviour that changes (each can be set back; values.yaml,
+"Server 0.12.4 settings", and the server's UPGRADE.md):
+
+- Entity extraction runs for every namespace that never set it (`person,organization,location`;
+  `dakera.config.defaultEntityTypes: "none"` restores the old default) and the background sweep tags the memories
+  already stored. GLiNER follows the embedding model's languages (`gliner-bi-small`, or `gliner-x-small` with
+  `bge-m3`), both in the image; a deployment that never set the model moves from `gliner-medium` and re-tags.
+- Recall: `importance_weighted` defaults to `false`; normalisation, collapse of derived memories, long-content
+  windows and bi-temporal ingest are on; a reranked head of 10; `associated_memories` in the answer. Rankings change.
+- Autopilot dedup and consolidation report instead of merging; stores read standing instructions and requests to
+  forget; the rate limit is per API key; memory-policy TTLs default to none.
+- Models are downloaded from `huggingface.co/DakeraAI` first, then the original repositories (`HF_ENDPOINT` serves
+  both). The image is about 2.65 GB.
+- Startup advice in `/health` `config_warnings`: `sizing`, `storage_in_memory`, `ephemeral_data_dir`.
+
+Chart defaults that changed:
+
+1. **Server limits 4 CPUs / 6Gi** (were 2 CPUs / 4Gi): embedding and the reranker want at least 4 CPUs, and the
+   image's default models hold about 3.5 GiB before any data. Set `dakera.resources` to keep the old limits (the
+   server then warns, `sizing`).
+2. **`dakera.features.multilingual.resources`** (new, 8 CPUs / 8Gi): bge-m3 wants 8 CPUs. Used instead of
+   `dakera.resources` and before `multimodal.resources`; `null` keeps the next block.
+
+### Added
+
+- Optional `dakera.config` settings of server 0.12.4, rendered only when set (an image up to 0.12.3 would list
+  them as unknown) and checked by `values.schema.json`: `contactEmail` (`DAKERA_CONTACT_EMAIL`, an e-mail address),
+  `defaultEntityTypes`, `glinerModel` (one of the five GLiNER models; the chart refuses one that does not read the
+  embedding model's languages, as the server does on a fresh install), `entityTagging`, `standingInstructions`,
+  `forgetRequests`, `recallImportanceWeighted`, `recallIncludeAssociated`, `rerankHead`,
+  `autopilotConsolidationMode`.
+- `rollback.command`: `downgrade` (the default, to v0.11.108) or `checkpoint`, a `dakera checkpoint` Job to run
+  before going back from 0.12.4 to an earlier 0.12 chart (README, "Rolling back to an earlier v0.12").
+- NOTES: the 0.12.4 changes on upgrade, a warning when the data root is an emptyDir
+  (`dakera.persistence.enabled: false`), and the optional contact address.
+
 ## 0.12.3 (Dakera server v0.12.3)
 
 Deploys server **0.12.3** (`ghcr.io/dakera-ai/dakera:0.12.3`) and Dashboard **0.5.2**

@@ -1,20 +1,26 @@
 {{- if .Values.rollback.enabled }}
-# One-off rollback to v0.11.108: `dakera downgrade` makes the data v0.11.108's
-# again. Run it AFTER the server has stopped (scale the Deployment to 0 first):
-# it refuses (exit 78, nothing changed) while a server runs on the data. Same
-# environment and volumes as the server. The image is the server's (0.12.3): its
-# downgrade rewrites the binary RocksDB hot-tier records 0.12.2+ writes as JSON
-# first, which an older v0.12 image would not. Not part of a normal install; see the
-# README, "Rolling back to v0.11". Read the JSON report on stdout:
-#   kubectl logs job/<fullname>-downgrade
+{{- $cmd := .Values.rollback.command | default "downgrade" }}
+{{- if not (has $cmd (list "downgrade" "checkpoint")) }}
+{{- fail (printf "rollback.command must be downgrade (to v0.11.108) or checkpoint (before going back to an earlier v0.12), not %q" $cmd) }}
+{{- end }}
+# One-off rollback Job. Run it AFTER the server has stopped (scale the Deployment to 0
+# first): it refuses (exit 78, nothing changed) while a server runs on the data. Same
+# environment and volumes as the server, and the server's image (0.12.4).
+#   downgrade:  to v0.11.108. `dakera downgrade` makes the data v0.11.108's again; it
+#               rewrites the binary RocksDB hot-tier records 0.12.2+ writes as JSON first,
+#               which an older v0.12 image would not. Read the JSON report on stdout.
+#   checkpoint: before going back to an earlier v0.12 (an image swap). `dakera checkpoint`
+#               replays the write-ahead log, takes one snapshot and truncates the log.
+# Not part of a normal install; see the README, "Rolling back":
+#   kubectl logs job/<fullname>-<command>
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "dakera.fullname" . }}-downgrade
+  name: {{ include "dakera.fullname" . }}-{{ $cmd }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "dakera.labels" . | nindent 4 }}
-    app.kubernetes.io/component: downgrade
+    app.kubernetes.io/component: {{ $cmd }}
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: {{ .Values.rollback.ttlSecondsAfterFinished }}
@@ -22,7 +28,7 @@ spec:
     metadata:
       labels:
         {{- include "dakera.selectorLabels" . | nindent 8 }}
-        app.kubernetes.io/component: downgrade
+        app.kubernetes.io/component: {{ $cmd }}
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
@@ -35,11 +41,11 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: downgrade
+        - name: {{ $cmd }}
           image: "{{ .Values.rollback.image | default (printf "%s:%s" .Values.dakera.image.repository (.Values.dakera.image.tag | default .Chart.AppVersion)) }}"
           imagePullPolicy: {{ .Values.dakera.image.pullPolicy }}
           command: ["dakera"]
-          args: ["downgrade"]
+          args: [{{ $cmd | quote }}]
           envFrom:
             - configMapRef:
                 name: {{ include "dakera.fullname" . }}-config

@@ -268,9 +268,14 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- with .Values.dashboard.trustedProxies }}
-            # Proxies whose X-Forwarded-For names the client (dashboard 0.5.2, nginx real_ip).
+            # Proxies whose X-Forwarded-For names the client (dashboard 0.5.2+, nginx real_ip).
             - name: DAKERA_TRUSTED_PROXIES
               value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (toString .Values.dashboard.telemetry) "false" }}
+            # Dashboard 0.5.3: its anonymous usage telemetry off (dashboard.telemetry: false).
+            - name: DAKERA_TELEMETRY
+              value: "off"
             {{- end }}
           livenessProbe:
             httpGet:
@@ -289,7 +294,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- if .Values.dashboard.securityContext.readOnlyRootFilesystem }}
-          # Dashboard 0.5.2 writes its runtime nginx configuration, pid and temp files here.
+          # Dashboard 0.5.2+ writes its runtime nginx configuration, pid and temp files here.
           volumeMounts:
             - name: tmp
               mountPath: /tmp

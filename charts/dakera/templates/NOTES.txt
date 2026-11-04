@@ -77,7 +77,18 @@ Dakera has been deployed!
 {{- $ts := "" }}
 {{- if not (kindIs "invalid" $t) }}{{ $ts = toString $t }}{{ end }}
 
-== Server 0.12.3 ==
+== Server 0.12.4 ==
+  Entity extraction is on by default for every namespace that never set its own
+  ({{ .Values.dakera.config.defaultEntityTypes | default "person,organization,location" }}; dakera.config.defaultEntityTypes: "none" turns the default off).
+  The background sweep tags the memories already stored, at background priority. GLiNER is
+  {{ if .Values.dakera.config.glinerModel }}{{ .Values.dakera.config.glinerModel }}{{ else if eq (include "dakera.multilingualEmbedder" .) "true" }}gliner-x-small{{ else }}gliner-bi-small{{ end }} (in the image); a deployment that never set it moves from gliner-medium and re-tags.
+  Recall rankings change (importance_weighted false, normalisation, collapse of derived memories,
+  reranked head of 10, associated_memories); autopilot dedup and consolidation report instead of
+  merging; the rate limit is per API key. Each can be set back: values.yaml, "Server 0.12.4 settings".
+  Going back to an earlier 0.12: scale the server to 0, run the rollback Job with
+  rollback.command=checkpoint, then roll back the release (README, "Rolling back to an earlier v0.12").
+
+== From server 0.12.2 or older (0.12.3 changes) ==
   POST /ops/shutdown needs a global super_admin key (an admin key gets 403); POST /admin/keys,
   /v1/namespaces/{ns}/keys, /admin/backups and /admin/encryption/rotate-key refuse unknown fields (422).
   The image is distroless (uid/gid 1000, no curl or shell tools); the probes are httpGet.
@@ -96,6 +107,14 @@ Dakera has been deployed!
   (PATCH /admin/keys/{id}); GET /v1/auth/whoami lists them as inert_namespaces.
   Writes are validated more strictly (reserved markers, agent ids over 241 bytes, content over the byte
   limit on update). Server UPGRADE.md, "Upgrading from v0.12.1 to v0.12.2".
+{{- end }}
+
+{{- if not .Values.dakera.persistence.enabled }}
+
+== The data root is an emptyDir (dakera.persistence.enabled: false) ==
+  The write-ahead log, the hot tier and the knowledge graph are lost with the pod; the server
+  warns about it at startup (/health config_warnings: ephemeral_data_dir). Keep persistence on
+  unless that is what you want.
 {{- end }}
 
 {{- if not .Values.dakera.config.authEnabled }}
@@ -124,6 +143,11 @@ Dakera has been deployed!
 
 {{- end }}
 
+{{- if not .Values.dakera.config.contactEmail }}
+  Optional: dakera.config.contactEmail=<your address> shows it in the startup banner and, with
+  telemetry on, lets the Dakera team reach you about this install.
+
+{{- end }}
   Metrics endpoint: http://dakera:3000/metrics (Prometheus scrape format)
   Health endpoints: /health/live (liveness), /health/ready (readiness), /health (detail,
                     including config_warnings)
@@ -132,5 +156,5 @@ Dakera has been deployed!
 
 
   Upgrading from chart 0.11.x or 0.12.x? Read charts/dakera/CHANGELOG.md first.
-  Rolling back to v0.11: see the README, "Rolling back to v0.11" (dakera downgrade runs with the
-  server's image: it rewrites the binary hot-tier records as JSON).
+  Rolling back: see the README, "Rolling back to v0.11" (dakera downgrade, with the server's
+  image) and "Rolling back to an earlier v0.12" (dakera checkpoint first, rollback.command=checkpoint).
