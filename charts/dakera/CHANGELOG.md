@@ -5,8 +5,12 @@ The chart version equals the Dakera server version it deploys. v0.11 lives on th
 
 ## 0.12.4 (Dakera server v0.12.4)
 
-Deploys server **0.12.4** (`ghcr.io/dakera-ai/dakera:0.12.4`); Dashboard **0.5.2** unchanged. Released after the
-server image is published.
+Deploys server **0.12.4** (`ghcr.io/dakera-ai/dakera:0.12.4`) and Dashboard **0.5.3**
+(`ghcr.io/dakera-ai/dakera-dashboard:0.5.3`). Released after both images are published.
+
+- **Dashboard 0.5.3**: forget by request and the agent's trash, the engine's setup advice, standing instructions in
+  the Recall lab, ways to reach the team, and anonymous usage telemetry (never content, ids, names or keys).
+  `dashboard.telemetry: false` (new) renders `DAKERA_TELEMETRY=off` in its pod; it deploys like 0.5.2 otherwise.
 
 ### Upgrade notes (0.12.3 to 0.12.4)
 

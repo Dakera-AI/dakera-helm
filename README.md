@@ -86,7 +86,7 @@ helm upgrade dakera dakera/dakera --namespace dakera \
 
 ### Upgrading from chart 0.12.3
 
-Chart 0.12.4 deploys server 0.12.4 (Dashboard 0.5.2 unchanged); nothing is migrated by hand: the on-disk format is
+Chart 0.12.4 deploys server 0.12.4 and Dashboard 0.5.3; nothing is migrated by hand: the on-disk format is
 unchanged. Back up first (`POST /admin/backups`), then `helm upgrade` (from 0.12.2 or older, the notes below apply
 too). Server
 [UPGRADE.md, "Upgrading from v0.12.3 to v0.12.4"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#upgrading-from-v0123-to-v0124).

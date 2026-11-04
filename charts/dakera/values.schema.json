@@ -263,9 +263,10 @@
           }
         },
         "replicaCount": {"type": "integer", "minimum": 1},
+        "telemetry": {"type": "boolean", "description": "Dashboard 0.5.3 anonymous usage telemetry; false renders DAKERA_TELEMETRY=off in the dashboard pod"},
         "sessionTtlHours": {"type": ["string", "integer"], "pattern": "^([0-9]+(\\.[0-9]+)?)?$", "description": "DAKERA_SESSION_TTL_HOURS; empty uses the dashboard default (12)"},
-        "trustedProxies": {"type": "string", "pattern": "^[0-9A-Fa-f.:/, ]*$", "description": "DAKERA_TRUSTED_PROXIES (dashboard 0.5.2): addresses / CIDRs of the reverse proxies whose X-Forwarded-For names the client, comma or space separated. Empty: the connecting peer is the client"},
-        "securityContext": {"type": "object", "description": "Container securityContext of the dashboard (default for 0.5.2: uid/gid 10001, read-only root with a /tmp emptyDir, no capability). An image up to 0.5.1 needs root, a writable root and CHOWN, DAC_OVERRIDE, SETGID, SETUID"},
+        "trustedProxies": {"type": "string", "pattern": "^[0-9A-Fa-f.:/, ]*$", "description": "DAKERA_TRUSTED_PROXIES (dashboard 0.5.2+): addresses / CIDRs of the reverse proxies whose X-Forwarded-For names the client, comma or space separated. Empty: the connecting peer is the client"},
+        "securityContext": {"type": "object", "description": "Container securityContext of the dashboard (default for 0.5.2+: uid/gid 10001, read-only root with a /tmp emptyDir, no capability). An image up to 0.5.1 needs root, a writable root and CHOWN, DAC_OVERRIDE, SETGID, SETUID"},
         "resources": {
           "type": "object",
           "properties": {

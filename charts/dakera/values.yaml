@@ -550,14 +550,21 @@ dashboard:
   enabled: true
   image:
     repository: ghcr.io/dakera-ai/dakera-dashboard
-    tag: "0.5.2"
+    tag: "0.5.3"
     pullPolicy: IfNotPresent
 
   replicaCount: 1
 
+  # Dashboard 0.5.3 sends anonymous usage telemetry (pages and feature use; never content,
+  # ids, names or keys: the dashboard's TELEMETRY.md) to Dakera's PostHog project (EU).
+  # false renders DAKERA_TELEMETRY=off in the dashboard pod (the server's own switch is
+  # DAKERA_TELEMETRY in dakera.extraEnv). Users can also turn it off in the browser (Do Not
+  # Track, Global Privacy Control, Settings > Privacy).
+  telemetry: true
+
   # Addresses / CIDRs (comma or space separated) of the reverse proxies in front of the
   # dashboard whose X-Forwarded-For names the client (DAKERA_TRUSTED_PROXIES, dashboard
-  # 0.5.2; nginx real_ip): the sign-in throttle then counts the real client. Typically the
+  # 0.5.2+; nginx real_ip): the sign-in throttle then counts the real client. Typically the
   # ingress controller's pod CIDR. Empty: the connecting peer is the client (behind a proxy,
   # every user shares the proxy's address and one person's typos throttle everyone).
   #   trustedProxies: "10.244.0.0/16"
@@ -567,7 +574,7 @@ dashboard:
   # Idle sessions end after 2 hours. Empty: the dashboard's default.
   sessionTtlHours: ""
 
-  # Dashboard 0.5.2 runs as uid/gid 10001 and writes only /tmp: with readOnlyRootFilesystem
+  # Dashboard 0.5.2+ runs as uid/gid 10001 and writes only /tmp: with readOnlyRootFilesystem
   # the chart mounts an emptyDir there. An image up to 0.5.1 starts as root and edits its
   # nginx configuration: it needs runAsNonRoot false, runAsUser 0, readOnlyRootFilesystem
   # false and capabilities.add [CHOWN, DAC_OVERRIDE, SETGID, SETUID].

@@ -144,7 +144,7 @@ done
 "$HELM" template r "$CHART" "${REQ[@]}" --set ingress.enabled=true --set ingress.apiHost=a.example.test --show-only templates/ingress.yaml \
   | grep_q -F 'nginx.ingress.kubernetes.io/proxy-body-size: 500m' || { echo "FAIL: ingress without proxy-body-size"; fail=1; }
 
-echo "== dashboard 0.5.2: uid 10001, read-only root with a /tmp emptyDir, trusted proxies when set"
+echo "== dashboard 0.5.3: uid 10001, read-only root with a /tmp emptyDir, trusted proxies when set, telemetry switch"
 dashdep=$(awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/' /tmp/chart-default.yaml)
 for want in 'runAsUser: 10001' 'readOnlyRootFilesystem: true' 'mountPath: /tmp' 'emptyDir: {}'; do
   printf '%s' "$dashdep" | grep_q -F "$want" || { echo "FAIL: dashboard: $want missing"; fail=1; }
@@ -152,6 +152,11 @@ done
 printf '%s' "$dashdep" | grep_q 'DAKERA_TRUSTED_PROXIES' && { echo "FAIL: DAKERA_TRUSTED_PROXIES rendered while unset"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set dashboard.trustedProxies='10.0.0.0/8 172.16.0.0/12' \
   | grep -A1 'name: DAKERA_TRUSTED_PROXIES' | grep_q -F '"10.0.0.0/8 172.16.0.0/12"' || { echo "FAIL: trustedProxies not rendered"; fail=1; }
+printf '%s' "$dashdep" | grep_q 'ghcr.io/dakera-ai/dakera-dashboard:0.5.3' || { echo "FAIL: dashboard image not 0.5.3"; fail=1; }
+printf '%s' "$dashdep" | grep_q 'DAKERA_TELEMETRY' && { echo "FAIL: DAKERA_TELEMETRY rendered with telemetry on"; fail=1; }
+"$HELM" template r "$CHART" "${REQ[@]}" --set dashboard.telemetry=false \
+  | awk 'BEGIN{RS="\n---\n"} /kind: Deployment/ && /component: dashboard/' \
+  | grep -A1 'name: DAKERA_TELEMETRY' | grep_q -F '"off"' || { echo "FAIL: dashboard.telemetry=false not rendered"; fail=1; }
 echo "== grace period follows terminationGracePeriodSeconds; a long drain needs a longer one"
 printf '%s' "$server" | grep_q 'terminationGracePeriodSeconds: 30' || { echo "FAIL: server grace period not 30"; fail=1; }
 "$HELM" template r "$CHART" "${REQ[@]}" --set-string dakera.config.shutdownDrainSecs=60 --set dakera.terminationGracePeriodSeconds=80 > /dev/null \
@@ -217,6 +222,7 @@ expect_refusal "document overlap over 1024"             --set-string dakera.conf
 expect_refusal "document extraction concurrency 0"      --set-string dakera.config.documents.extractConcurrency=0
 expect_refusal "unknown document setting"               --set dakera.config.documents.maxPages=10
 expect_refusal "trusted proxies not addresses"          --set 'dashboard.trustedProxies=10.0.0.0/8;evil'
+expect_refusal "dashboard telemetry not a boolean"      --set-string 'dashboard.telemetry=maybe'
 expect_refusal "cluster secret too short"                --set dakera.cluster.secret=short
 expect_refusal "cluster secret and existingSecret"       --set dakera.cluster.secret=0123456789abcdef --set dakera.cluster.existingSecret.name=mine
 # Server 0.12.1: a cluster node without DAKERA_CLUSTER_SECRET exits with code 78.

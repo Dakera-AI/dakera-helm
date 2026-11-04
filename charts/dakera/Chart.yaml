@@ -22,11 +22,11 @@ annotations:
     - name: dakera
       image: ghcr.io/dakera-ai/dakera:0.12.4
     - name: dakera-dashboard
-      image: ghcr.io/dakera-ai/dakera-dashboard:0.5.2
+      image: ghcr.io/dakera-ai/dakera-dashboard:0.5.3
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: Dakera server 0.12.4 (chart 0.12.4; the image tag follows appVersion). Dashboard 0.5.2 unchanged. Entity extraction is on by default for namespaces that never set it (the background sweep tags stored memories after the upgrade); recall rankings and autopilot defaults change - each can be set back (values.yaml, Server 0.12.4 settings)
+      description: Dakera server 0.12.4 (chart 0.12.4; the image tag follows appVersion). Dashboard 0.5.3 (forget by request, setup advice, anonymous usage telemetry: dashboard.telemetry). Entity extraction is on by default for namespaces that never set it (the background sweep tags stored memories after the upgrade); recall rankings and autopilot defaults change - each can be set back (values.yaml, Server 0.12.4 settings)
     - kind: added
       description: Optional server 0.12.4 settings rendered only when set and checked by values.schema.json - contactEmail (DAKERA_CONTACT_EMAIL), defaultEntityTypes, glinerModel (refused when it does not match the embedding model's languages), entityTagging, standingInstructions, forgetRequests, recallImportanceWeighted, recallIncludeAssociated, rerankHead, autopilotConsolidationMode
     - kind: changed

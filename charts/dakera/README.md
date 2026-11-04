@@ -88,7 +88,7 @@ helm upgrade dakera dakera/dakera --namespace dakera \
 
 ### Upgrading from chart 0.12.3
 
-Chart 0.12.4 deploys server 0.12.4 (Dashboard 0.5.2 unchanged); nothing is migrated by hand: the on-disk format is
+Chart 0.12.4 deploys server 0.12.4 and Dashboard 0.5.3; nothing is migrated by hand: the on-disk format is
 unchanged. Back up first (`POST /admin/backups`), then `helm upgrade` (from 0.12.2 or older, the notes below apply
 too). Server
 [UPGRADE.md, "Upgrading from v0.12.3 to v0.12.4"](https://github.com/Dakera-AI/dakera/blob/main/docs/v0.12/UPGRADE.md#upgrading-from-v0123-to-v0124).
@@ -311,10 +311,11 @@ and `AWS_SECRET_ACCESS_KEY` (= the MinIO password). Not together with `dakera.ro
 | `dakera.resources.limits.memory` / `cpu` | `6Gi` / `4` | Limits: the default models hold about 3.5 GiB; embedding and the reranker want 4 CPUs (8 with bge-m3: `features.multilingual.resources`, 8 CPUs / 8Gi) |
 | `dakera.autoscaling.enabled` | `false` | Enable HPA (one server per data root; see values.yaml) |
 | `dakera.autoscaling.maxReplicas` | `5` | HPA max replicas |
-| `dashboard.enabled` | `true` | Deploy the web dashboard (0.5.2). Operators sign in at `/login` with their own API key; the chart gives the dashboard no key. Keep one replica (sessions live in memory) |
+| `dashboard.enabled` | `true` | Deploy the web dashboard (0.5.3). Operators sign in at `/login` with their own API key; the chart gives the dashboard no key. Keep one replica (sessions live in memory) |
 | `dashboard.sessionTtlHours` | `""` | `DAKERA_SESSION_TTL_HOURS`: longest a sign-in lasts (dashboard default 12) |
-| `dashboard.trustedProxies` | `""` | `DAKERA_TRUSTED_PROXIES` (0.5.2): addresses / CIDRs of the proxies in front (e.g. the ingress controller's pod CIDR) whose `X-Forwarded-For` names the client, for the sign-in throttle |
-| `dashboard.securityContext` | uid/gid 10001, read-only root | 0.5.2 runs unprivileged and writes only `/tmp` (an emptyDir). An image up to 0.5.1 needs root (see values.yaml) |
+| `dashboard.telemetry` | `true` | Dashboard 0.5.3 anonymous usage telemetry (never content, ids, names or keys); `false` renders `DAKERA_TELEMETRY=off` in its pod. The server's switch is `DAKERA_TELEMETRY` in `dakera.extraEnv` |
+| `dashboard.trustedProxies` | `""` | `DAKERA_TRUSTED_PROXIES` (0.5.2+): addresses / CIDRs of the proxies in front (e.g. the ingress controller's pod CIDR) whose `X-Forwarded-For` names the client, for the sign-in throttle |
+| `dashboard.securityContext` | uid/gid 10001, read-only root | 0.5.2+ runs unprivileged and writes only `/tmp` (an emptyDir). An image up to 0.5.1 needs root (see values.yaml) |
 | `mcp.enabled` | `false` | dakera-mcp speaks MCP over stdio only: as a pod it exits at once (CrashLoopBackOff, measured with 0.10.11). Run it next to the MCP client |
 | `minio.enabled` | `true` | Deploy built-in MinIO (disable to use external S3) |
 | `minio.persistence.size` | `50Gi` | MinIO PVC size |
@@ -368,7 +369,7 @@ the pods (e.g. an ALB's idle timeout, 60 s by default: the server's value must b
 The server, its init container and the rollback Job run as uid/gid 1000 with a read-only root filesystem, no
 capability, no privilege escalation and the `RuntimeDefault` seccomp profile; no pod mounts a service-account token
 (nothing in the chart calls the Kubernetes API). The probes are `httpGet` (nothing needed in the image: newer server
-images have no `curl`). The dashboard (0.5.2) runs as uid/gid 10001 with a read-only root, a `/tmp` emptyDir and no capability.
+images have no `curl`). The dashboard (0.5.3) runs as uid/gid 10001 with a read-only root, a `/tmp` emptyDir and no capability.
 The built-in MinIO is reachable only from this release's Dakera pods (`minio.networkPolicy`). No PodDisruptionBudget
 is rendered: the server is one replica with a `ReadWriteOnce` volume, and a budget would block node drains.
 `POST /ops/shutdown` needs a global `super_admin` key from server 0.12.3; nothing in the chart calls it. GPU
