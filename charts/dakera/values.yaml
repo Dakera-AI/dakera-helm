@@ -6,12 +6,14 @@
 #   helm install dakera ./charts/dakera --set dakera.replicaCount=3
 
 # ---- Dakera Server ----------------------------------------------------------
-# Chart 0.12.3 deploys Dakera server v0.12.3. For v0.11 use the release/0.11
+# Chart 0.12.4 deploys Dakera server v0.12.4. For v0.11 use the release/0.11
 # branch or a 0.11.x chart version (see README, "Versions").
 dakera:
   image:
     repository: ghcr.io/dakera-ai/dakera
-    # Defaults to the chart appVersion. The image is distroless from 0.12.3: uid/gid 1000,
+    # Defaults to the chart appVersion. The CPU image is about 2.65 GB and ships its default
+    # models (bge-large, the reranker, GLiNER gliner-bi-small / gliner-x-small and the
+    # forget/instruction encoder): a default start downloads nothing. Distroless from 0.12.3: uid/gid 1000,
     # /bin/sh only (no curl, wget or coreutils); probes are httpGet. The GPU image
     # (tag `gpu` / `cuda`, or <version>-gpu) is built on CUDA 13 from 0.12.3: the nodes need
     # NVIDIA driver R580 or newer (and the NVIDIA device plugin; request nvidia.com/gpu in
@@ -115,8 +117,9 @@ dakera:
     # DAKERA_RECALL_RANK_DEPTH: ranking depth floor, 1-1000 (default 10): the first k results
     # of a top_k=k recall are the first k of a top_k=10 recall for k <= it.
     recallRankDepth: ""
-    # DAKERA_RECALL_COLLAPSE_DERIVED: "true" = one result per source memory, derived sentence
-    # sub-memories collapsed into it (matched_text, matched_ids). Default off.
+    # DAKERA_RECALL_COLLAPSE_DERIVED: one result per source memory, derived sentence
+    # sub-memories collapsed into it (matched_text, matched_ids). Default on from server
+    # 0.12.4 (off before); "false" = off.
     recallCollapseDerived: ""
     # DAKERA_RECALL_EXCLUDE_SUMMARIES: "true" = session summaries left out of recall unless a
     # request sets include_summaries (default off).
@@ -154,8 +157,8 @@ dakera:
     # lane, dakera.features.multimodal). Each value is rendered only when set.
     # Memory: PDF / DOCX are parsed in `dakera extract-text` child processes, up to
     # extractConcurrency x extractMemoryMb (2 x 1024 MB by default) on top of the server, inside
-    # the container's memory limit (dakera.resources, 4Gi by default). For PDF-heavy imports
-    # raise the limit (6Gi) or set extractConcurrency "1".
+    # the container's memory limit (dakera.resources, 6Gi by default). For PDF-heavy imports
+    # raise the limit or set extractConcurrency "1".
     # Body size: an upload is up to maxBytes (25 MiB): an ingress in front must accept it
     # (ingress.annotations sets ingress-nginx's proxy-body-size; its own default is 1m).
     documents:
@@ -168,6 +171,61 @@ dakera:
       extractTimeoutSecs: ""  # DAKERA_DOCUMENT_EXTRACT_TIMEOUT_SECS, default 60
       extractMemoryMb: ""     # DAKERA_DOCUMENT_EXTRACT_MEMORY_MB, default 1024 (per child)
       extractConcurrency: ""  # DAKERA_DOCUMENT_EXTRACT_CONCURRENCY, default 2
+
+    # ---- Server 0.12.4 settings: optional, rendered only when set -------------------------
+    # An image up to 0.12.3 does not know these names (it lists them as unknown
+    # configuration): set them only with 0.12.4 or later. Strings; checked by
+    # values.schema.json (the server refuses to boot on a value it cannot read).
+    #
+    # DAKERA_CONTACT_EMAIL: your e-mail address, shown in the startup banner and, when
+    # telemetry is on, sent with it so the Dakera team can reach you about this install
+    # (updates, a fix for a problem it reports). A value that is not an address refuses the
+    # boot. Empty = nothing shared.
+    #   contactEmail: "you@company.com"
+    contactEmail: ""
+    # Entity extraction is ON by default from 0.12.4 for every namespace that never set
+    # extract_entities / entity_types itself (a namespace's own setting always wins); the
+    # background sweep tags the memories already stored after the upgrade.
+    # DAKERA_DEFAULT_ENTITY_TYPES: the types it extracts, comma separated (GLiNER labels or
+    # @conversational, @technical, @personal, @pii). Server default
+    # "person,organization,location"; "none" = no server default (0.12.3's behaviour).
+    defaultEntityTypes: ""
+    # DAKERA_GLINER_MODEL: the entity-extraction model. Empty = the one for the embedding
+    # model's languages, both in the image: gliner-bi-small with an English embedding model
+    # (bge-large, the default), gliner-x-small (about 100 languages) with bge-m3
+    # (features.multilingual) or multilingual-minilm. It must read the embedding model's
+    # languages (English: gliner-bi-small, gliner-bi-edge, gliner-medium; multilingual:
+    # gliner-x-small, gliner-multi): the chart refuses a mismatch, as the server refuses it on
+    # a fresh install. Changing it re-tags the stored memories in the background. A model the
+    # image does not ship downloads on first use (or add its name to dakera.models.pull).
+    glinerModel: ""
+    # DAKERA_ENTITY_TAGGING: background (default: the store answers with the rule-based tags
+    # and a worker adds the model's) | inline (inside the store).
+    entityTagging: ""
+    # DAKERA_STANDING_INSTRUCTIONS: "false" = stored texts are not read for standing
+    # instructions ("From now on, answer in French"; default on: tagged and returned in
+    # recall's `instructions`).
+    standingInstructions: ""
+    # DAKERA_FORGET_REQUESTS: off | detect (default: a stored request to forget is reported in
+    # the store's answer) | apply (also forgets what it means, restorably).
+    forgetRequests: ""
+    # Recall defaults that moved in 0.12.4 (rankings change). Empty = the 0.12.4 default; the
+    # values in brackets bring back 0.12.3's behaviour. A request that names the field wins.
+    # DAKERA_RECALL_IMPORTANCE_WEIGHTED: default false (the query-type weights apply) ["true"].
+    recallImportanceWeighted: ""
+    # DAKERA_RECALL_INCLUDE_ASSOCIATED: knowledge-graph neighbours in associated_memories,
+    # default on ["false"].
+    recallIncludeAssociated: ""
+    # DAKERA_RERANK_HEAD: a reranked recall above this top_k keeps the cross-encoder's first N,
+    # then coverage; default 10 ["0"].
+    rerankHead: ""
+    # Also on by default from 0.12.4, through dakera.extraEnv: DAKERA_NORMALIZE_RELEVANCE,
+    # DAKERA_LONG_CONTENT_WINDOWS, DAKERA_BITEMPORAL_INGEST ["0" each], and
+    # recallCollapseDerived above.
+    # DAKERA_AUTOPILOT_CONSOLIDATION_MODE: off | report (default from 0.12.4: reports the groups
+    # it would merge, changes nothing) | merge (every earlier release). Autopilot dedup
+    # (DAKERA_AUTOPILOT_DEDUP_MODE, extraEnv) defaults to report too.
+    autopilotConsolidationMode: ""
 
   # Root API key — REQUIRED, one of two ways:
   #   rootApiKey:     the chart stores it (and the MinIO credentials) in <release>-secrets;
@@ -200,7 +258,7 @@ dakera:
   # the chart sets from `config` above. Standard Kubernetes EnvVar list: each item
   # is {name, value} or {name, valueFrom}. Do not repeat a name the chart already
   # sets (DAKERA_HOST/PORT/GRPC_PORT/STORAGE/STORAGE_PATH/S3_*/AUTH_ENABLED/
-  # TIERED*/SEARCH_MODE/..., RUST_LOG; the 0.12.2 / 0.12.3 settings in `config` when set: an
+  # TIERED*/SEARCH_MODE/..., RUST_LOG; the 0.12.2 - 0.12.4 settings in `config` when set: an
   # extraEnv entry wins over the ConfigMap). DAKERA_DATA_DIR is an alias of
   # DAKERA_STORAGE_PATH: do not set it. Values must be strings.
   #
@@ -217,11 +275,11 @@ dakera:
   # cores and memory limit; set them here only to override (server README env tables):
   # DAKERA_MAX_CONCURRENT_INFERENCES, DAKERA_ADMISSION_WAIT_SECS, DAKERA_INTERACTIVE_MIN_CORES,
   # DAKERA_EMBED_PREPACK / DAKERA_RERANK_PREPACK (auto: on when 20% of the memory limit
-  # holds the copies, about 0.3 GB per core each; with the default 4Gi / 2 CPU limit the
-  # reranker's is on and the embedder's off), DAKERA_RERANKER_MODEL, DAKERA_RERANK_PASSAGE_TOKENS,
+  # holds the copies, about 0.3 GB per core each), DAKERA_RERANKER_MODEL, DAKERA_RERANK_PASSAGE_TOKENS,
   # DAKERA_RERANK_CACHE_ENTRIES, DAKERA_HNSW_CACHE_BYTES, DAKERA_MEM_TRIM_INTERVAL_SECS,
   # DAKERA_AUDIT_SAMPLE_RATE, DAKERA_AUDIT_READ_SAMPLE_RATE, DAKERA_AUTOPILOT_DEDUP_MODE
-  # (default off from 0.12.3; "merge" keeps the earlier releases' scheduled dedup),
+  # (report by default from 0.12.4, off in 0.12.3; "merge" keeps the earlier releases'
+  # scheduled dedup),
   # DAKERA_AUTOPILOT_TRASH_RETENTION_HOURS, REEMBED_BATCH_SIZE,
   # REEMBED_INTERVAL_SECS. Set resources.limits.memory: the server sizes from it.
   #
@@ -235,20 +293,29 @@ dakera:
   # POST /admin/namespaces/migrate-dimensions, then remove it again.
   extraEnv: []
 
+  # The data root on a PersistentVolumeClaim (the default). Off: an emptyDir, which a new pod
+  # loses (write-ahead log, hot tier, graph); from 0.12.4 the server warns about it at startup
+  # (/health config_warnings: ephemeral_data_dir) and NOTES does too. Keep it on unless the
+  # store is external (storage: s3) and you accept replaying from it.
   persistence:
     enabled: true
     size: 20Gi
     storageClass: ""
 
-  # Models. The image ships bge-large and the reranker in its own model store
-  # (/usr/local/share/dakera/models): they load in seconds with no network and
-  # need nothing below. Any other model (DAKERA_MODEL=bge-m3 / colbert-small,
-  # whisper, the vision model, GLiNER) is downloaded into the model cache
-  # (/app/models) on first use.
+  # Models. The image ships bge-large, the reranker, GLiNER (gliner-bi-small,
+  # gliner-x-small) and the forget/instruction encoder in its own model store
+  # (/usr/local/share/dakera/models): they load with no network and need nothing
+  # below. Any other model (DAKERA_MODEL=bge-m3 / colbert-small, whisper, the
+  # vision model, gliner-medium / gliner-multi / gliner-bi-edge) is downloaded into
+  # the model cache (/app/models) on first use, from Dakera's copies on Hugging Face
+  # (huggingface.co/DakeraAI) first, then the original repositories. HF_ENDPOINT (a
+  # mirror or proxy, through extraEnv) serves both: it needs the DakeraAI organisation,
+  # or only the originals (the copy is then skipped).
   models:
     # Pulled by an init container (`dakera models pull`) before the server
     # starts. Model names (`dakera models list`), or `configured`: what the
-    # environment above configures (extraEnv included).
+    # environment above configures (extraEnv included; not GLiNER: name a
+    # glinerModel the image does not ship here, e.g. gliner-multi).
     #   pull: [configured]
     #   pull: [bge-m3, whisper]       # `whisper` is the default model; name another, e.g. whisper-base
     pull: []
@@ -291,8 +358,9 @@ dakera:
     #     outside the server;
     #   persistModelCache: the model cache is a PVC (dakera.models.persistence.size, 10Gi by
     #     default: bge-m3 ~570 MB, colbert-small ~34 MB, whisper-tiny.en ~151 MB (the default whisper-base: TODO, being measured),
-    #     colmodernvbert ~966 MB, GLiNER ~782 MB, each plus an ORT-format copy of about the
-    #     same size) so a restarted pod does not download again. ReadWriteOnce: one server pod.
+    #     colmodernvbert ~966 MB, a GLiNER model the image does not ship 65-366 MB, each plus an
+    #     ORT-format copy of about the same size) so a restarted pod does not download again.
+    #     ReadWriteOnce: one server pod.
     prePull: true
     persistModelCache: true
 
@@ -312,6 +380,19 @@ dakera:
       # DAKERA_MAX_SEQ_LENGTH: "" = the model's default cap (2048 for bge-m3; it supports
       # 8192 at about 4 GiB of attention scores per layer per row).
       maxSeqLength: ""
+      # Used INSTEAD of dakera.resources (and of multimodal.resources) while multilingual is on:
+      # bge-m3 with the reranker wants at least 8 CPUs (the server warns at startup,
+      # config_warnings: sizing, with fewer), and 8Gi also holds the multimodal models. null
+      # keeps the next block (multimodal.resources, else dakera.resources). Entity extraction
+      # then uses gliner-x-small (dakera.config.glinerModel: empty, gliner-x-small or
+      # gliner-multi).
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1Gi
+        limits:
+          cpu: "8"
+          memory: 8Gi
 
     # Multimodal: attachments (files per agent, referenced from memories) + speech to text
     # (WAV only). Works on an existing store. The Whisper model is DAKERA_WHISPER_MODEL, set
@@ -350,7 +431,7 @@ dakera:
     # it as its own release (own MinIO / bucket and data volume), never over a text store.
     vision:
       enabled: false
-      # Used INSTEAD of dakera.resources (and of multimodal.resources) while vision is on; null keeps dakera.resources.
+      # Used INSTEAD of dakera.resources (and of the multilingual / multimodal blocks) while vision is on; null keeps dakera.resources.
       resources:
         requests:
           cpu: 500m
@@ -399,13 +480,18 @@ dakera:
   # distroless image writes the same paths).
   readOnlyRootFilesystem: true
 
+  # CPU: embedding and the reranker share the cores the limit allows: at least 4 with
+  # bge-large or another English model, 8 with bge-m3 (features.multilingual.resources). Below
+  # that the server warns at startup (config_warnings: sizing) and recalls queue behind each
+  # other under load. Memory: the image's default models loaded (bge-large, the reranker,
+  # GLiNER, the forget/instruction encoder) hold about 3.5 GiB before any data.
   resources:
     requests:
       cpu: 500m
       memory: 512Mi
     limits:
-      cpu: "2"
-      memory: 4Gi
+      cpu: "4"
+      memory: 6Gi
 
   # A server locks its data root while it runs (one server per data root), so
   # the chart does not scale one release horizontally: autoscaling is off by
@@ -431,22 +517,28 @@ dakera:
   # (config.shutdownDrainSecs, 8 s by default), then the final flushes.
   terminationGracePeriodSeconds: 30
 
-# ---- Rollback to v0.11 -------------------------------------------------------
-# `dakera downgrade` makes the data v0.11.108's again. It is a one-off Job that
-# must run AFTER the server has stopped. It is not rendered unless enabled; see
-# README, "Rolling back to v0.11":
+# ---- Rollback: to v0.11, or to an earlier v0.12 -----------------------------
+# A one-off Job that must run AFTER the server has stopped. It is not rendered unless
+# enabled; see README, "Rolling back":
 #   kubectl scale deploy/<fullname> --replicas=0
 #   helm template <release> ./charts/dakera <your values> \
-#     --set rollback.enabled=true --show-only templates/rollback-job.yaml \
-#     | kubectl apply -f -
-# The Job must run with the image of the version being rolled back, 0.12.3 (the default):
+#     --set rollback.enabled=true [--set rollback.command=checkpoint] \
+#     --show-only templates/rollback-job.yaml | kubectl apply -f -
+# command: downgrade (the default) makes the data v0.11.108's again (`dakera downgrade`).
+#          checkpoint, before going back from 0.12.4 to an earlier 0.12 (an image swap,
+#          e.g. `helm rollback` to chart 0.12.3): `dakera checkpoint` replays the
+#          write-ahead log, takes one snapshot and truncates the log, so the earlier
+#          release has nothing to replay (it lacks 0.12.4's replay rules).
+# The Job must run with the image of the version being rolled back, 0.12.4 (the default):
 # 0.12.2 and later write binary RocksDB hot-tier records, and their `dakera downgrade` rewrites them
-# as JSON before v0.11.108 can read them (report field hot_tier_records_rewritten_as_json).
-# A 0.12.0 / 0.12.1 image would not. Rolling back to 0.12.0 / 0.12.1 needs no Job.
+# as JSON before v0.11.108 can read them (report field hot_tier_records_rewritten_as_json);
+# `checkpoint` exists from 0.12.4.
 rollback:
   enabled: false
-  # Image that runs `downgrade`: leave empty (the server's image, 0.12.3). Never an older
-  # v0.12 image after 0.12.2 has run on the data (see above).
+  # downgrade | checkpoint (see above).
+  command: downgrade
+  # Image that runs the command: leave empty (the server's image, 0.12.4). Never an older
+  # v0.12 image after a newer one has run on the data (see above).
   image: ""
   ttlSecondsAfterFinished: 86400
 

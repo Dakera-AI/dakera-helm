@@ -59,6 +59,16 @@
             "maxConnections": {"type": ["string", "integer"], "pattern": "^([1-9][0-9]{0,5}|1000000)?$", "minimum": 1, "maximum": 1000000, "description": "DAKERA_MAX_CONNECTIONS (server 0.12.3; an image up to 0.12.2 lists it as an unknown variable): most open REST connections, 1 to 1000000. Empty = the server default, 10000"},
             "shutdownDrainSecs": {"type": ["string", "integer"], "pattern": "^([0-9]{1,3}|[1-2][0-9]{3}|3[0-5][0-9]{2}|3600)?$", "minimum": 0, "maximum": 3600, "description": "DAKERA_SHUTDOWN_DRAIN_SECS (server 0.12.3; an image up to 0.12.2 lists it as an unknown variable): longest REST drain at shutdown, 0 to 3600. Empty = the server default, 8. 15 + it + 5 must fit in dakera.terminationGracePeriodSeconds"},
             "allowedHosts": {"type": "string", "pattern": "^[^\\s]*$", "description": "DAKERA_ALLOWED_HOSTS (server 0.12.3; an image up to 0.12.2 lists it as an unknown variable): read only with authEnabled false; dotted Host names accepted besides localhost, IPs and single-label names (comma separated, * = any). Others get 421"},
+            "contactEmail": {"type": "string", "maxLength": 254, "pattern": "^([^@\\s]+@[^@\\s.][^@\\s]*\\.[^@\\s]*[^@\\s.])?$", "description": "DAKERA_CONTACT_EMAIL (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): your e-mail address, shown in the startup banner and sent with telemetry when it is on. Not an address = the server refuses to boot. Empty = unset"},
+            "defaultEntityTypes": {"type": "string", "pattern": "^[^:]*$", "description": "DAKERA_DEFAULT_ENTITY_TYPES (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): entity types extracted in every namespace that never set its own (comma separated GLiNER labels or @presets; none = no server default). Empty = person,organization,location"},
+            "glinerModel": {"type": "string", "enum": ["", "gliner-bi-small", "gliner-bi-edge", "gliner-medium", "gliner-x-small", "gliner-multi"], "description": "DAKERA_GLINER_MODEL (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): entity-extraction model; must read the embedding model's languages (English: gliner-bi-small, gliner-bi-edge, gliner-medium; multilingual: gliner-x-small, gliner-multi). Empty = the default for the embedding model"},
+            "entityTagging": {"type": "string", "enum": ["", "background", "inline"], "description": "DAKERA_ENTITY_TAGGING (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): where neural entity tags are extracted. Empty = background"},
+            "standingInstructions": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee])$", "description": "DAKERA_STANDING_INSTRUCTIONS (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): store-time detection of standing instructions. Empty = on"},
+            "forgetRequests": {"type": "string", "enum": ["", "off", "detect", "apply"], "description": "DAKERA_FORGET_REQUESTS (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): what a store does with a request to forget. Empty = detect"},
+            "recallImportanceWeighted": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|[Yy][Ee][Ss]|[Nn][Oo]|[Oo][Nn]|[Oo][Ff][Ff])$", "description": "DAKERA_RECALL_IMPORTANCE_WEIGHTED (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): server default of recall's importance_weighted. Empty = false (true = 0.12.3's default)"},
+            "recallIncludeAssociated": {"type": ["string", "boolean"], "pattern": "^(|0|1|[Tt][Rr][Uu][Ee]|[Ff][Aa][Ll][Ss][Ee]|[Yy][Ee][Ss]|[Nn][Oo]|[Oo][Nn]|[Oo][Ff][Ff])$", "description": "DAKERA_RECALL_INCLUDE_ASSOCIATED (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): knowledge-graph neighbours in associated_memories. Empty = on"},
+            "rerankHead": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 0, "description": "DAKERA_RERANK_HEAD (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): reranked head of a recall above this top_k (0 = the reranked list alone). Empty = 10"},
+            "autopilotConsolidationMode": {"type": "string", "enum": ["", "off", "report", "merge"], "description": "DAKERA_AUTOPILOT_CONSOLIDATION_MODE (server 0.12.4; an image up to 0.12.3 lists it as an unknown variable): autopilot consolidation. Empty = report (merge = every earlier release)"},
             "documents": {
               "type": "object",
               "description": "Document import settings (server 0.12.3), each rendered only when set",
@@ -122,7 +132,8 @@
                 "fulltextLanguage": {"type": "string", "description": "DAKERA_FULLTEXT_LANGUAGE"},
                 "cjkBigrams": {"type": "string", "enum": ["", "true", "false"], "description": "DAKERA_FULLTEXT_CJK_BIGRAMS (empty follows the language)"},
                 "queryLang": {"type": "string", "enum": ["", "auto", "en", "de", "fr", "es", "it", "pt", "nl"], "description": "DAKERA_QUERY_LANG"},
-                "maxSeqLength": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 16, "description": "DAKERA_MAX_SEQ_LENGTH"}
+                "maxSeqLength": {"type": ["string", "integer"], "pattern": "^[0-9]*$", "minimum": 16, "description": "DAKERA_MAX_SEQ_LENGTH"},
+                "resources": {"type": "object", "description": "Used instead of dakera.resources (and of multimodal.resources) while the feature is on: bge-m3 wants 8 CPUs"}
               }
             },
             "multimodal": {
@@ -230,9 +241,10 @@
     },
     "rollback": {
       "type": "object",
-      "description": "Optional one-off Job that runs `dakera downgrade` (rollback to v0.11.108)",
+      "description": "Optional one-off Job that runs `dakera downgrade` (rollback to v0.11.108) or `dakera checkpoint` (before going back to an earlier v0.12)",
       "properties": {
         "enabled": {"type": "boolean"},
+        "command": {"type": "string", "enum": ["downgrade", "checkpoint"], "description": "downgrade (to v0.11.108, the default) or checkpoint (before an image swap back to an earlier v0.12)"},
         "image": {"type": "string", "description": "Image for the Job; default: the server image"},
         "ttlSecondsAfterFinished": {"type": "integer"}
       }

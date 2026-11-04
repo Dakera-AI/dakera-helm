@@ -2,8 +2,8 @@ apiVersion: v2
 name: dakera
 description: Dakera — AI agent memory platform
 type: application
-version: 0.12.3
-appVersion: "0.12.3"
+version: 0.12.4
+appVersion: "0.12.4"
 keywords:
   - agent-memory
   - ai-memory
@@ -20,23 +20,19 @@ icon: https://raw.githubusercontent.com/dakera-ai/dakera-deploy/main/assets/logo
 annotations:
   artifacthub.io/images: |
     - name: dakera
-      image: ghcr.io/dakera-ai/dakera:0.12.3
+      image: ghcr.io/dakera-ai/dakera:0.12.4
     - name: dakera-dashboard
       image: ghcr.io/dakera-ai/dakera-dashboard:0.5.2
   artifacthub.io/official: "true"
   artifacthub.io/changes: |
     - kind: changed
-      description: Dakera server 0.12.3 (chart 0.12.3; the image tag follows appVersion) and Dashboard 0.5.1 -> 0.5.2 (runs as uid/gid 10001, no curl, read-only root with a /tmp emptyDir; new optional dashboard.trustedProxies, DAKERA_TRUSTED_PROXIES)
-    - kind: security
-      description: Server image distroless (uid/gid 1000, no curl or shell tools; probes stay httpGet). POST /ops/shutdown needs a global super_admin key; four admin routes refuse unknown JSON fields (422). The GPU image is CUDA 13 and needs NVIDIA driver R580+
-    - kind: security
-      description: Read-only root filesystem by default, RuntimeDefault seccomp and no service-account token on every pod; MinIO reachable only from the release's Dakera pods (minio.networkPolicy, on by default); dakera.existingSecret
+      description: Dakera server 0.12.4 (chart 0.12.4; the image tag follows appVersion). Dashboard 0.5.2 unchanged. Entity extraction is on by default for namespaces that never set it (the background sweep tags stored memories after the upgrade); recall rankings and autopilot defaults change - each can be set back (values.yaml, Server 0.12.4 settings)
     - kind: added
-      description: Optional server 0.12.3 settings rendered only when set - httpHeaderReadTimeoutSecs (also closes idle keep-alive connections - keep proxy idle timeouts shorter), maxConnections, shutdownDrainSecs (checked against dakera.terminationGracePeriodSeconds), allowedHosts (required with authentication off and a dotted Host name, else 421), and the recall settings neighborhoodMode, recallRankDepth, recallCollapseDerived, recallExcludeSummaries, recallSessionCap, neighborhoodEventTime, sentenceDecomp, supersedesEventTime
-    - kind: added
-      description: Document import settings (dakera.config.documents.* - DAKERA_DOCUMENTS, DAKERA_DOCUMENT_*); extraction uses up to 2 x 1024 MB on top of the server inside the memory limit. ingress.annotations defaults to proxy-body-size 500m (ingress-nginx's 1m refused uploads)
+      description: Optional server 0.12.4 settings rendered only when set and checked by values.schema.json - contactEmail (DAKERA_CONTACT_EMAIL), defaultEntityTypes, glinerModel (refused when it does not match the embedding model's languages), entityTagging, standingInstructions, forgetRequests, recallImportanceWeighted, recallIncludeAssociated, rerankHead, autopilotConsolidationMode
     - kind: changed
-      description: Server probes get timeoutSeconds 5; a published chart version is never re-pushed to the OCI registry
+      description: Server limits 2 CPUs / 4Gi -> 4 CPUs / 6Gi (embedding and the reranker want 4 CPUs; the default models hold about 3.5 GiB); features.multilingual gets its own resources block, 8 CPUs / 8Gi (bge-m3 wants 8)
+    - kind: added
+      description: rollback.command checkpoint - a one-off dakera checkpoint Job before going back from 0.12.4 to an earlier 0.12 chart; NOTES warns when the data root is an emptyDir (persistence off)
   artifacthub.io/signKey: |
     fingerprint: keyless
     url: https://github.com/Dakera-AI/dakera-helm/blob/main/cosign.pub
